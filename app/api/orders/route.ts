@@ -93,9 +93,7 @@ function isDispatchedFromOffice(o: any): boolean {
 
 export async function GET() {
   try {
-    console.log('[API/Orders] GET /api/orders request received.');
     await dbConnect();
-    console.log('[API/Orders] Database connected. Fetching decoupled collections in parallel...');
 
     // Fetch from all collections in parallel
     const [ordersRes, suppliersRes, couriersRes, codsRes, returnsRes, commentsRes] = await Promise.all([

@@ -135,10 +135,54 @@ const hashColor = (str: string): number => {
 };
 
 // Date helpers
+const parseOrderDate = (dateStr: string): Date | null => {
+  if (!dateStr) return null;
+  const clean = dateStr.trim();
+  
+  // Split by slashes, dashes, or dots
+  const parts = clean.split(/[\/\-\.]/);
+  if (parts.length === 3) {
+    // If year is first (YYYY-MM-DD)
+    if (parts[0].length === 4) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parseInt(parts[2], 10);
+      const res = new Date(y, m, d);
+      if (!isNaN(res.getTime())) return res;
+    }
+    // If year is last (DD/MM/YYYY or MM/DD/YYYY)
+    if (parts[2].length === 4 || parts[2].length === 2) {
+      const y = parseInt(parts[2], 10) + (parts[2].length === 2 ? 2000 : 0);
+      const p0 = parseInt(parts[0], 10);
+      const p1 = parseInt(parts[1], 10);
+      
+      // If first part is > 12, it must be day (DD/MM/YYYY)
+      if (p0 > 12) {
+        const res = new Date(y, p1 - 1, p0);
+        if (!isNaN(res.getTime())) return res;
+      }
+      // If second part is > 12, it must be day (MM/DD/YYYY)
+      else if (p1 > 12) {
+        const res = new Date(y, p0 - 1, p1);
+        if (!isNaN(res.getTime())) return res;
+      }
+      // Default to DD/MM/YYYY
+      else {
+        const res = new Date(y, p1 - 1, p0);
+        if (!isNaN(res.getTime())) return res;
+      }
+    }
+  }
+  
+  const native = new Date(clean);
+  if (!isNaN(native.getTime())) return native;
+  
+  return null;
+};
+
 const orderMonthKey = (dateStr: string): string => {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '';
+  const d = parseOrderDate(dateStr);
+  if (!d) return '';
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 };
 
@@ -345,10 +389,14 @@ export default function OrderFlowApp() {
   const [importResult, setImportResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [previewRows, setPreviewRows] = useState<any[]>([]);
   const [previewHeaders, setPreviewHeaders] = useState<string[]>([]);
+  const [forceImport, setForceImport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Toast State
   const [toast, setToast] = useState<{ message: string; ok: boolean } | null>(null);
+
+  // Custom Delete DB Confirm Modal State
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // Active Import job tracker
   const [activeJob, setActiveJob] = useState<{
@@ -482,7 +530,11 @@ export default function OrderFlowApp() {
   const parseTSV = (text: string) => {
     const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
     if (lines.length < 2) return [];
-    const sep = lines[0].includes('\t') ? '\t' : ',';
+    
+    const tabCount = (lines[0].match(/\t/g) || []).length;
+    const commaCount = (lines[0].match(/,/g) || []).length;
+    const sep = tabCount > commaCount ? '\t' : ',';
+    
     const headers = splitDelim(lines[0], sep).map(norm);
     return lines.slice(1).map(l => {
       const vals = splitDelim(l, sep);
@@ -500,6 +552,48 @@ export default function OrderFlowApp() {
       Object.defineProperty(o, '_raw', { value: vals, enumerable: false });
       return o;
     });
+  };
+
+  const findValPreview = (r: any, subs: string[]): string => {
+    for (const s of subs) { if (r[s] !== undefined && r[s] !== null) return String(r[s]); }
+    for (const k of Object.keys(r)) {
+      const kl = k.toLowerCase();
+      if (subs.some(s => kl.includes(s))) return String(r[k]);
+    }
+    return '';
+  };
+
+  const validatePreviewRow = (row: any, type: string) => {
+    if (type === 'orders' || type === 'at') {
+      if (!row.orderNo && !row.sku) return 'Row is empty: missing both Order Number and SKU code.';
+      if (!row.orderNo) return 'Missing Order Number (orderNo).';
+      if (!row.sku) return 'Missing SKU code.';
+    } else {
+      let ref = '';
+      if (type === 'ewe') {
+        ref = findValPreview(row, ['referencenumber', 'reference']);
+      } else if (type === 'tfm') {
+        ref = findValPreview(row, ['shipperref', 'shipper']);
+      } else if (type === 'cod' || type === 'returns' || type === 'ret') {
+        ref = findValPreview(row, ['orderno', 'order_no', 'orderNo']);
+      } else {
+        ref = row.orderNo;
+      }
+      ref = (ref || '').trim();
+      if (!ref) {
+        return 'Missing Order Reference Number.';
+      }
+
+      const exists = db.some(o => o.orderNo === ref);
+      if (!exists) {
+        if (forceImport) {
+          return 'AUTO-CREATE';
+        } else {
+          return `Order number "${ref}" not found in database (import Airtable orders first)`;
+        }
+      }
+    }
+    return null;
   };
 
   useEffect(() => {
@@ -557,7 +651,7 @@ export default function OrderFlowApp() {
     if (file) handleFile(file);
   };
 
-  // Import Submission
+  // Import Submission (Sequential Chunked uploads to prevent Vercel 10s timeouts)
   const handleImportSubmit = async (type: string) => {
     const trimmed = importText.trim();
     if (!trimmed) {
@@ -571,81 +665,100 @@ export default function OrderFlowApp() {
       return;
     }
 
-    try {
-      setLoading(true);
-      const res = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, rows })
-      });
-      const data = await res.json();
-      if (data.success && data.jobId) {
-        const jobId = data.jobId;
-        // Start polling import status
-        setActiveJob({
-          jobId,
-          progress: 0,
-          processedRows: 0,
-          totalRows: rows.length,
-          status: 'processing',
-          added: 0,
-          updated: 0
-        });
+    const jobId = 'job_' + Date.now();
+    const totalRows = rows.length;
+    const chunkSize = 100;
 
-        const interval = setInterval(async () => {
-          try {
-            const statusRes = await fetch(`/api/import/status?jobId=${jobId}`);
-            const statusData = await statusRes.json();
-            if (statusData.success) {
-              setActiveJob(statusData);
-              if (statusData.status === 'completed') {
-                clearInterval(interval);
-                let msg = '';
-                if (type === 'orders' || type === 'at') {
-                  msg = `Imported ${statusData.added} new orders, updated ${statusData.updated} orders.`;
-                } else {
-                  msg = `Processed ${statusData.totalRows} rows successfully (Added: ${statusData.added}, Updated: ${statusData.updated}).`;
-                }
-                setImportResult({ ok: true, message: msg });
-                showToast(msg);
-                setImportText('');
-                setImportFileName('');
-                setActiveJob(null);
-                await loadData();
-              } else if (statusData.status === 'failed') {
-                clearInterval(interval);
-                setImportResult({ ok: false, message: statusData.error || 'Import failed' });
-                showToast(statusData.error || 'Import failed', false);
-                setActiveJob(null);
-                setLoading(false);
-              }
-            }
-          } catch (err) {
-            console.error('Error polling import job status:', err);
+    setActiveJob({
+      jobId,
+      progress: 0,
+      processedRows: 0,
+      totalRows,
+      status: 'processing',
+      added: 0,
+      updated: 0
+    });
+
+    // Clear inputs and result tab immediately to let the user navigate away
+    setImportText('');
+    setImportFileName('');
+    setImportResult(null);
+
+    // Toast feedback
+    showToast('Import started in background');
+
+    // Run chunk loop in async IIFE context (non-blocking)
+    (async () => {
+      let totalAdded = 0;
+      let totalUpdated = 0;
+      
+      try {
+        for (let index = 0; index < totalRows; index += chunkSize) {
+          const chunk = rows.slice(index, index + chunkSize);
+          
+          const res = await fetch('/api/orders/chunk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type, chunk, jobId, startIndex: index, forceImport })
+          });
+          const data = await res.json();
+          
+          if (!data.success) {
+            throw new Error(data.error || 'Batch import failed');
           }
-        }, 500);
-      } else {
-        setImportResult({ ok: false, message: data.error || 'Upload error occurred' });
-        showToast(data.error || 'Database upload failed', false);
-        setLoading(false);
+          
+          totalAdded += data.added || 0;
+          totalUpdated += data.updated || 0;
+          
+          const processed = Math.min(totalRows, index + chunk.length);
+          const progress = Math.min(100, Math.round((processed / totalRows) * 100));
+          
+          setActiveJob(prev => prev ? {
+            ...prev,
+            progress,
+            processedRows: processed,
+            added: totalAdded,
+            updated: totalUpdated
+          } : null);
+        }
+        
+        // Completed successfully!
+        setActiveJob(prev => prev ? { ...prev, status: 'completed', progress: 100 } : null);
+        let msg = '';
+        if (type === 'orders' || type === 'at') {
+          msg = `Imported ${totalAdded} new orders, updated ${totalUpdated} orders.`;
+        } else {
+          msg = `Processed ${totalRows} rows successfully (Added: ${totalAdded}, Updated: ${totalUpdated}).`;
+        }
+        setImportResult({ ok: true, message: msg });
+        showToast(msg);
+        
+        // Load data on finish
+        await loadData();
+        
+        // Auto clear active job indicator after 4 seconds
+        setTimeout(() => {
+          setActiveJob(null);
+        }, 4000);
+
+      } catch (err: any) {
+        console.error('Batch import crashed:', err);
+        setActiveJob(prev => prev ? { ...prev, status: 'failed', error: err.message } : null);
+        setImportResult({ ok: false, message: err.message || 'Import job failed' });
+        showToast(err.message || 'Import job failed', false);
       }
-    } catch (err) {
-      console.error(err);
-      setImportResult({ ok: false, message: 'Network connection failed' });
-      showToast('Network error during import', false);
-      setLoading(false);
-    }
+    })();
   };
 
-  // Clear Database
-  const handleClearDatabase = async () => {
-    if (!confirm('Clear all orders? This deletes everything permanently from MongoDB.')) return;
+  // Clear Database Execution
+  const executeClearDatabase = async () => {
     try {
       setLoading(true);
       const res = await fetch('/api/orders', { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         setDb([]);
+        setImportLogs([]);
         showToast('All order database records successfully cleared');
       } else {
         showToast(data.error || 'Failed to clear records', false);
@@ -655,6 +768,7 @@ export default function OrderFlowApp() {
       showToast('Network error during delete', false);
     } finally {
       setLoading(false);
+      setShowDeleteModal(false);
     }
   };
 
@@ -723,19 +837,7 @@ export default function OrderFlowApp() {
       const dateStr = o.orderDate;
       if (!dateStr) return;
       
-      let monthKey = '';
-      const parts = dateStr.split('/');
-      if (parts.length === 3) {
-        const year = parts[2].length === 4 ? parts[2] : '20' + parts[2];
-        const month = parts[0].padStart(2, '0');
-        monthKey = `${year}-${month}`;
-      } else {
-        const d = new Date(dateStr);
-        if (!isNaN(d.getTime())) {
-          monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        }
-      }
-      
+      const monthKey = orderMonthKey(dateStr);
       if (!monthKey) return;
       
       const val = parseFloat(o.orderValue) || 0;
@@ -1052,10 +1154,10 @@ export default function OrderFlowApp() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-100 text-zinc-800 font-sans">
-      {/* Toast Notification */}
+      {/* Toast Notification (Shifted to bottom-left to prevent overlap) */}
       {toast && (
         <div
-          className={`fixed bottom-6 right-6 px-4 py-3 border rounded-lg shadow-lg text-sm transition-all duration-300 z-50 flex items-center gap-2 ${
+          className={`fixed bottom-6 left-6 px-4 py-3 border rounded-lg shadow-lg text-sm transition-all duration-300 z-50 flex items-center gap-2 ${
             toast.ok
               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
               : 'bg-amber-50 text-amber-800 border-amber-200'
@@ -1066,56 +1168,116 @@ export default function OrderFlowApp() {
         </div>
       )}
 
-      {/* Background Import Progress Polling Overlay */}
+      {/* Floating Background Import Progress Notification Card (Non-blocking) */}
       {activeJob && (
-        <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-2xl w-full max-w-md flex flex-col gap-4">
+        <div className="fixed bottom-6 right-6 z-40 max-w-md w-80 md:w-96 animate-slide-up">
+          <div className="bg-white rounded-2xl border border-indigo-150 p-5 shadow-2xl flex flex-col gap-3.5 hover:shadow-indigo-500/10 transition-all">
             <div className="flex justify-between items-center">
-              <h3 className="font-bold text-zinc-900 text-sm flex items-center gap-2">
-                <UploadCloud className="w-5 h-5 text-indigo-500 animate-bounce" />
-                Importing data (please wait)...
+              <h3 className="font-extrabold text-zinc-900 text-xs flex items-center gap-1.5">
+                <UploadCloud className="w-4.5 h-4.5 text-indigo-500 animate-bounce" />
+                Importing data (background)...
               </h3>
-              <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg">
+              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg">
                 {activeJob.progress}%
               </span>
             </div>
 
-            <div className="w-full bg-zinc-100 rounded-full h-2 overflow-hidden border border-zinc-200/50">
+            <div className="w-full bg-zinc-150 rounded-full h-1.5 overflow-hidden border border-zinc-200/30">
               <div 
-                className="bg-indigo-600 h-2 rounded-full transition-all duration-300 ease-out" 
+                className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300 ease-out" 
                 style={{ width: `${activeJob.progress}%` }}
               ></div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-xs mt-2 border-t border-zinc-100 pt-3">
+            <div className="grid grid-cols-2 gap-3 text-[10px] mt-1 border-t border-zinc-100 pt-2.5">
               <div>
-                <span className="text-zinc-400 block uppercase font-bold text-[9px] tracking-wider">Processed</span>
-                <span className="font-semibold text-zinc-800 text-[11px]">{activeJob.processedRows} / {activeJob.totalRows} rows</span>
+                <span className="text-zinc-400 block uppercase font-bold text-[8px] tracking-wider">Processed</span>
+                <span className="font-semibold text-zinc-800">{activeJob.processedRows} / {activeJob.totalRows} rows</span>
               </div>
               <div>
-                <span className="text-zinc-400 block uppercase font-bold text-[9px] tracking-wider">Status</span>
-                <span className="font-semibold text-zinc-800 text-[11px] capitalize">{activeJob.status}</span>
+                <span className="text-zinc-400 block uppercase font-bold text-[8px] tracking-wider">Status</span>
+                <span className="font-semibold text-zinc-800 capitalize flex items-center gap-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    activeJob.status === 'completed' 
+                      ? 'bg-emerald-500' 
+                      : activeJob.status === 'failed' 
+                        ? 'bg-rose-500' 
+                        : 'bg-indigo-500 animate-ping'
+                  }`}></span>
+                  {activeJob.status}
+                </span>
               </div>
             </div>
             
-            <div className="grid grid-cols-2 gap-4 text-xs border-t border-zinc-100 pt-3">
+            <div className="grid grid-cols-2 gap-3 text-[10px] border-t border-zinc-100 pt-2.5">
               <div>
-                <span className="text-zinc-400 block uppercase font-bold text-[9px] tracking-wider">Added (New)</span>
-                <span className="font-semibold text-emerald-600 text-[11px]">{activeJob.added} records</span>
+                <span className="text-zinc-400 block uppercase font-bold text-[8px] tracking-wider">Added (New)</span>
+                <span className="font-semibold text-emerald-600">{activeJob.added} records</span>
               </div>
               <div>
-                <span className="text-zinc-400 block uppercase font-bold text-[9px] tracking-wider">Updated / Matched</span>
-                <span className="font-semibold text-indigo-600 text-[11px]">{activeJob.updated} records</span>
+                <span className="text-zinc-400 block uppercase font-bold text-[8px] tracking-wider">Updated / Matched</span>
+                <span className="font-semibold text-indigo-600">{activeJob.updated} records</span>
               </div>
+            </div>
+
+            {activeJob.error && (
+              <div className="mt-1.5 text-[9px] text-rose-700 bg-rose-50 border border-rose-100 p-2 rounded-lg font-medium">
+                Exception: {activeJob.error}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Database Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-2xl w-full max-w-md flex flex-col gap-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-2 bg-rose-50 rounded-full border border-rose-100">
+                <Trash2 className="w-6 h-6 text-rose-500" />
+              </div>
+              <h3 className="font-extrabold text-zinc-900 text-sm">Clear All Database Records?</h3>
+            </div>
+
+            <div className="text-zinc-600 text-xs leading-relaxed space-y-2">
+              <p>
+                You are about to clear the database. This action is <strong className="text-rose-600">permanent and irreversible</strong>.
+              </p>
+              <p className="bg-rose-50 border border-rose-100 rounded-lg p-3 text-[11px] text-rose-700 font-medium flex items-start gap-1.5">
+                <AlertTriangle className="w-4.5 h-4.5 text-rose-500 flex-shrink-0 mt-0.5" />
+                This will delete all orders, supplier status updates, courier tracking details (EWE/TFM), COD values, returns log, comment logs, and diagnostic records from the database.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2 border border-zinc-200 hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold shadow-sm transition"
+              >
+                No, Cancel
+              </button>
+              <button
+                onClick={executeClearDatabase}
+                disabled={loading}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm shadow-rose-600/10 flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+              >
+                {loading ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                Yes, Clear Everything
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {/* Sidebar Navigation */}
-      <aside className="w-60 flex-shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col z-20 shadow-xl">
-        <div className="p-4 border-b border-zinc-800 flex items-center gap-3 text-white font-bold text-lg tracking-tight">
-          <Package className="w-6 h-6 text-indigo-400" />
+      <aside className="w-60 flex-shrink-0 bg-white border-r border-zinc-200 flex flex-col z-20 shadow-xl">
+        <div className="p-4 border-b border-zinc-100 flex items-center gap-3 text-zinc-900 font-bold text-lg tracking-tight">
+          <Package className="w-6 h-6 text-indigo-600" />
           <span>OrderFlow</span>
         </div>
 
@@ -1132,7 +1294,7 @@ export default function OrderFlowApp() {
                 className={`w-full text-left flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                   isActive
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                    : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-white'
+                    : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950'
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -1140,44 +1302,44 @@ export default function OrderFlowApp() {
                   <span>{TITLES[viewName]}</span>
                 </div>
                 {/* Visual arrow indicators for specific menus */}
-                <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isActive ? 'rotate-90 text-white' : 'text-zinc-600'}`} />
+                <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isActive ? 'rotate-90 text-white' : 'text-zinc-400'}`} />
               </button>
             );
           })}
 
           {/* Sidebar Alerts panel */}
-          <div className="pt-4 mt-4 border-t border-zinc-800/80 px-2">
-            <h4 className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-2 px-1">Alerts</h4>
+          <div className="pt-4 mt-4 border-t border-zinc-200 px-2">
+            <h4 className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-2 px-1">Alerts</h4>
             <div className="space-y-1">
               <button
                 onClick={() => handleAlertJump('dash', 'sec-dash-bc')}
-                className="w-full flex items-center justify-between text-left py-1.5 px-2 rounded hover:bg-zinc-800 text-[11px] text-zinc-400 hover:text-white"
+                className="w-full flex items-center justify-between text-left py-1.5 px-2 rounded hover:bg-zinc-100 text-[11px] text-zinc-600 hover:text-zinc-950"
               >
                 <div className="flex items-center gap-1.5">
                   <ClipboardList className="w-3.5 h-3.5 text-amber-500" />
                   <span>Bill created, not dispatched</span>
                 </div>
-                <span className="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full text-[10px] font-bold">{alertCounts.billCreated}</span>
+                <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full text-[10px] font-bold">{alertCounts.billCreated}</span>
               </button>
               <button
                 onClick={() => handleAlertJump('dash', 'sec-dash-s2')}
-                className="w-full flex items-center justify-between text-left py-1.5 px-2 rounded hover:bg-zinc-800 text-[11px] text-zinc-400 hover:text-white"
+                className="w-full flex items-center justify-between text-left py-1.5 px-2 rounded hover:bg-zinc-100 text-[11px] text-zinc-600 hover:text-zinc-950"
               >
                 <div className="flex items-center gap-1.5">
                   <Timer className="w-3.5 h-3.5 text-red-500" />
                   <span>Suppliers not dispatched 2+ days</span>
                 </div>
-                <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full text-[10px] font-bold">{alertCounts.supNotDispatched2}</span>
+                <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded-full text-[10px] font-bold">{alertCounts.supNotDispatched2}</span>
               </button>
               <button
                 onClick={() => handleAlertJump('dash', 'sec-dash-7d')}
-                className="w-full flex items-center justify-between text-left py-1.5 px-2 rounded hover:bg-zinc-800 text-[11px] text-zinc-400 hover:text-white"
+                className="w-full flex items-center justify-between text-left py-1.5 px-2 rounded hover:bg-zinc-100 text-[11px] text-zinc-600 hover:text-zinc-950"
               >
                 <div className="flex items-center gap-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
                   <span>Order 5+ days, not dispatched</span>
                 </div>
-                <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full text-[10px] font-bold">{alertCounts.order5dNotDisp}</span>
+                <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded-full text-[10px] font-bold">{alertCounts.order5dNotDisp}</span>
               </button>
               <button
                 onClick={() => handleAlertJump('reports', 'sec-rep-holdewe')}
@@ -1244,7 +1406,7 @@ export default function OrderFlowApp() {
 
             {/* Clear Database (Dangerous Action) */}
             <button
-              onClick={handleClearDatabase}
+              onClick={() => setShowDeleteModal(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-rose-200 text-rose-700 rounded-lg text-xs bg-white hover:bg-rose-50 transition shadow-sm font-medium"
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-500" />
@@ -1821,47 +1983,120 @@ export default function OrderFlowApp() {
                         className="w-full h-32 border border-zinc-200 rounded-xl p-3 text-xs bg-zinc-50 font-mono focus:outline-none focus:border-indigo-500 resize-y"
                       />
                     </div>
-
                     {/* Submit and Result UI */}
-                    <div className="flex items-center gap-4">
-                      <button
-                        onClick={() => handleImportSubmit(importTab)}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 shadow-md hover:shadow-indigo-600/10 transition"
-                      >
-                        Import {importTab.toUpperCase()} Data
-                      </button>
-                      <span className="text-[11px] text-zinc-500">
-                        {db.length} total SKUs stored in DB
-                      </span>
+                    <div className="flex flex-col gap-4">
+                      {previewRows.length > 0 && (
+                        <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-xs flex flex-col gap-1.5 text-indigo-800">
+                          <span className="font-bold flex items-center gap-1.5 text-[13px]">
+                            <Info className="w-4 h-4 text-indigo-500" />
+                            Ready to Process {previewRows.length} Rows
+                          </span>
+                          <p className="opacity-90">
+                            Clicking the button below will start the background import job. <strong>{previewRows.length}</strong> records will be processed and parsed.
+                          </p>
+                        </div>
+                      )}
+
+                      {previewRows.length > 0 && importTab !== 'at' && importTab !== 'orders' && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2.5">
+                          <input 
+                            type="checkbox" 
+                            id="chk-force-import"
+                            checked={forceImport} 
+                            onChange={e => setForceImport(e.target.checked)}
+                            className="rounded text-amber-650 focus:ring-amber-500 border-amber-300 w-4 h-4 cursor-pointer"
+                          />
+                          <label htmlFor="chk-force-import" className="font-semibold cursor-pointer select-none">
+                            Force Import: Auto-create missing placeholder orders in the database instead of skipping them.
+                          </label>
+                        </div>
+                      )}
+
+                      {(() => {
+                        if (previewRows.length === 0) return null;
+                        const invalidRowsCount = previewRows.filter(row => {
+                          const err = validatePreviewRow(row, importTab);
+                          return err !== null && err !== 'AUTO-CREATE';
+                        }).length;
+                        if (invalidRowsCount === 0) return null;
+                        return (
+                          <div className="bg-rose-50 border border-rose-100 rounded-xl p-4 text-xs flex flex-col gap-1.5 text-rose-800 animate-pulse">
+                            <span className="font-bold flex items-center gap-1.5 text-[13px] text-rose-700">
+                              <AlertTriangle className="w-4 h-4 text-rose-500" />
+                              Integrity Alert: {invalidRowsCount} Invalid / Skipped Rows Detected
+                            </span>
+                            <p className="opacity-90">
+                              There are <strong>{invalidRowsCount}</strong> rows in your spreadsheet copy that are missing required keys (such as Order Number or SKU code) and will be bypassed during database ingestion. Flags are highlighted below.
+                            </p>
+                          </div>
+                        );
+                      })()}
+
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => handleImportSubmit(importTab)}
+                          className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 shadow-md hover:shadow-indigo-600/10 transition"
+                        >
+                          Import {importTab.toUpperCase()} Data ({previewRows.length} rows)
+                        </button>
+                        <span className="text-[11px] text-zinc-500">
+                          {db.length} total SKUs stored in DB
+                        </span>
+                      </div>
                     </div>
 
                     {previewRows.length > 0 && (
-                      <div className="border border-zinc-200 rounded-xl overflow-hidden shadow-sm bg-white">
+                      <div className="border border-zinc-200 rounded-xl overflow-hidden shadow-sm bg-white mt-4">
                         <div className="px-4 py-2.5 bg-zinc-50 border-b border-zinc-200 flex justify-between items-center">
                           <h4 className="font-semibold text-zinc-800 text-[11px]">
-                            Parsed Preview ({previewRows.length} rows detected)
+                            Parsed Preview ({previewRows.length} rows parsed)
                           </h4>
-                          <span className="text-[10px] text-zinc-400 font-medium">Showing first 5 rows</span>
+                          <span className="text-[10px] text-zinc-400 font-medium">Showing first 10 rows for validation</span>
                         </div>
-                        <div className="overflow-x-auto max-h-64">
+                        <div className="overflow-x-auto max-h-96">
                           <table className="w-full text-left border-collapse text-[11px]">
                             <thead>
                               <tr className="bg-zinc-100 text-[10px] text-zinc-500 uppercase border-b border-zinc-200 font-bold">
+                                <th className="p-2 border-r border-zinc-200 text-rose-600 font-bold whitespace-nowrap bg-zinc-150">Pre-Import Validation Alert</th>
                                 {previewHeaders.map(h => (
                                   <th key={h} className="p-2 border-r border-zinc-200 whitespace-nowrap">{h}</th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody>
-                              {previewRows.slice(0, 5).map((row, idx) => (
-                                <tr key={idx} className="hover:bg-zinc-50 border-b border-zinc-100">
-                                  {previewHeaders.map(h => (
-                                    <td key={h} className="p-2 border-r border-zinc-100 max-w-[200px] truncate" title={row[h]}>
-                                      {typeof row[h] === 'object' ? JSON.stringify(row[h]) : String(row[h] ?? '-')}
+                              {previewRows.slice(0, 10).map((row, idx) => {
+                                const validationError = validatePreviewRow(row, importTab);
+                                const isAutoCreate = validationError === 'AUTO-CREATE';
+                                const isInvalid = !!validationError && !isAutoCreate;
+
+                                return (
+                                  <tr 
+                                    key={idx} 
+                                    className={`border-b border-zinc-100 ${
+                                      isInvalid 
+                                        ? 'bg-rose-50/70 text-rose-950 font-medium hover:bg-rose-100/50' 
+                                        : isAutoCreate 
+                                          ? 'bg-amber-50/60 text-amber-950 font-medium hover:bg-amber-100/40 border-amber-100'
+                                          : 'hover:bg-zinc-50'
+                                    }`}
+                                  >
+                                    <td className={`p-2 border-r font-bold ${
+                                      isInvalid 
+                                        ? 'text-rose-600 border-rose-100' 
+                                        : isAutoCreate 
+                                          ? 'text-amber-600 border-amber-100'
+                                          : 'text-zinc-400 border-zinc-100'
+                                    }`}>
+                                      {isAutoCreate ? '✓ Will Auto-Create Order' : validationError || '✓ Valid'}
                                     </td>
-                                  ))}
-                                </tr>
-                              ))}
+                                    {previewHeaders.map(h => (
+                                      <td key={h} className={`p-2 border-r max-w-[200px] truncate ${isInvalid ? 'border-rose-100/60' : isAutoCreate ? 'border-amber-100/60' : 'border-zinc-100'}`} title={row[h]}>
+                                        {typeof row[h] === 'object' ? JSON.stringify(row[h]) : String(row[h] ?? '-')}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>

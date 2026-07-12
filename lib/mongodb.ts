@@ -72,9 +72,7 @@ if (!cached) {
 const mongooseCached = cached as MongooseGlobal;
 
 export async function dbConnect() {
-  console.log('[MongoDB] dbConnect() called.');
   if (mongooseCached.conn) {
-    console.log('[MongoDB] Returning cached active connection.');
     return mongooseCached.conn;
   }
 
