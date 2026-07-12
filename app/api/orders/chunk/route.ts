@@ -6,6 +6,7 @@ import CourierImport from '@/models/CourierImport';
 import CODImport from '@/models/CODImport';
 import ReturnImport from '@/models/ReturnImport';
 import ImportLog from '@/models/ImportLog';
+import { invalidateOrdersCache } from '@/lib/ordersCache';
 
 // Helper: Normalize headers
 function norm(h: string): string {
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
   try {
     await dbConnect();
     const body = await req.json();
-    const { type, chunk, jobId, startIndex, forceImport } = body;
+    const { type, chunk, jobId, startIndex, forceImport, isLastChunk } = body;
 
     if (!type || !Array.isArray(chunk) || chunk.length === 0 || !jobId) {
       return NextResponse.json({ success: false, error: 'Invalid batch configuration parameters' }, { status: 400 });
@@ -551,6 +552,11 @@ export async function POST(req: Request) {
 
     if (logsToInsert.length > 0) {
       await ImportLog.insertMany(logsToInsert);
+    }
+
+    // Bust the orders cache on the last chunk so the next GET re-fetches fresh merged data
+    if (isLastChunk) {
+      invalidateOrdersCache();
     }
 
     return NextResponse.json({

@@ -8,6 +8,7 @@ import ReturnImport from '@/models/ReturnImport';
 import CommentRecord from '@/models/CommentRecord';
 import ImportJob from '@/models/ImportJob';
 import ImportLog from '@/models/ImportLog';
+import { getCachedOrders, setCachedOrders, invalidateOrdersCache } from '@/lib/ordersCache';
 
 // Helper: Normalize headers
 function norm(h: string): string {
@@ -93,6 +94,12 @@ function isDispatchedFromOffice(o: any): boolean {
 
 export async function GET() {
   try {
+    // Return cached merged data if available (invalidated on import/clear)
+    const cached = getCachedOrders();
+    if (cached) {
+      return NextResponse.json({ success: true, orders: cached, fromCache: true });
+    }
+
     await dbConnect();
 
     // Fetch from all collections in parallel
@@ -111,8 +118,6 @@ export async function GET() {
     const cods = Array.isArray(codsRes) ? codsRes : [];
     const returns = Array.isArray(returnsRes) ? returnsRes : [];
     const comments = Array.isArray(commentsRes) ? commentsRes : [];
-
-    console.log(`[API/Orders] Merging ${orders.length} order items with decoupled analytics in memory...`);
 
     // Create fast lookup maps by orderNo
     const supplierMap = new Map(suppliers.map(s => [s.orderNo, s]));
@@ -170,7 +175,9 @@ export async function GET() {
       };
     });
 
-    console.log(`[API/Orders] Merge complete. Returning ${merged.length} fully structured order records.`);
+    // Populate cache for subsequent requests
+    setCachedOrders(merged);
+
     return NextResponse.json({ success: true, orders: merged });
 
   } catch (error: any) {
@@ -181,7 +188,6 @@ export async function GET() {
 
 export async function DELETE() {
   try {
-    console.log('[API/Orders] DELETE request received. Resetting all decoupled tables...');
     await dbConnect();
 
     await Promise.all([
@@ -195,7 +201,9 @@ export async function DELETE() {
       ImportLog.deleteMany({})
     ]);
 
-    console.log('[API/Orders] Reset complete. All collections cleared.');
+    // Invalidate cache so next GET rebuilds fresh data
+    invalidateOrdersCache();
+
     return NextResponse.json({ success: true, message: 'All database tables reset successfully' });
   } catch (error: any) {
     console.error('[API/Orders] Error resetting tables:', error);

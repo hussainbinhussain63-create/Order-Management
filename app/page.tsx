@@ -134,56 +134,61 @@ const hashColor = (str: string): number => {
   return Math.abs(hash) % 360;
 };
 
-// Date helpers
-const parseOrderDate = (dateStr: string): Date | null => {
-  if (!dateStr) return null;
+// Date helpers — returns a normalised YYYY-MM-DD string for consistent comparison
+const normalizeDate = (dateStr: string): string => {
+  if (!dateStr) return '';
   const clean = dateStr.trim();
-  
-  // Split by slashes, dashes, or dots
+
+  // Already YYYY-MM-DD (most common after normalisation)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+
   const parts = clean.split(/[\/\-\.]/);
   if (parts.length === 3) {
-    // If year is first (YYYY-MM-DD)
+    // YYYY-?-? (year first)
     if (parts[0].length === 4) {
       const y = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10) - 1;
+      const m = parseInt(parts[1], 10);
       const d = parseInt(parts[2], 10);
-      const res = new Date(y, m, d);
-      if (!isNaN(res.getTime())) return res;
+      if (!isNaN(y) && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      }
     }
-    // If year is last (DD/MM/YYYY or MM/DD/YYYY)
+    // ?-?-YYYY or ?-?-YY (year last)
     if (parts[2].length === 4 || parts[2].length === 2) {
       const y = parseInt(parts[2], 10) + (parts[2].length === 2 ? 2000 : 0);
       const p0 = parseInt(parts[0], 10);
       const p1 = parseInt(parts[1], 10);
-      
-      // If first part is > 12, it must be day (DD/MM/YYYY)
-      if (p0 > 12) {
-        const res = new Date(y, p1 - 1, p0);
-        if (!isNaN(res.getTime())) return res;
-      }
-      // If second part is > 12, it must be day (MM/DD/YYYY)
-      else if (p1 > 12) {
-        const res = new Date(y, p0 - 1, p1);
-        if (!isNaN(res.getTime())) return res;
-      }
-      // Default to DD/MM/YYYY
-      else {
-        const res = new Date(y, p1 - 1, p0);
-        if (!isNaN(res.getTime())) return res;
+      let day: number, month: number;
+      if (p0 > 12) { day = p0; month = p1; }       // DD/MM/YYYY
+      else if (p1 > 12) { day = p1; month = p0; }  // MM/DD/YYYY
+      else { day = p0; month = p1; }               // assume DD/MM/YYYY (UAE standard)
+      if (!isNaN(y) && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        return `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       }
     }
   }
-  
-  const native = new Date(clean);
-  if (!isNaN(native.getTime())) return native;
-  
-  return null;
+
+  // Fallback: try native JS parser
+  const d = new Date(clean);
+  if (!isNaN(d.getTime())) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  return '';
+};
+
+const parseOrderDate = (dateStr: string): Date | null => {
+  const norm = normalizeDate(dateStr);
+  if (!norm) return null;
+  const [y, m, d] = norm.split('-').map(Number);
+  const res = new Date(y, m - 1, d);
+  return isNaN(res.getTime()) ? null : res;
 };
 
 const orderMonthKey = (dateStr: string): string => {
-  const d = parseOrderDate(dateStr);
-  if (!d) return '';
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  const norm = normalizeDate(dateStr);
+  if (!norm) return '';
+  // norm is YYYY-MM-DD, so month key is just the first 7 chars
+  return norm.slice(0, 7);
 };
 
 const monthLabel = (m: string): string => {
@@ -357,30 +362,6 @@ export default function OrderFlowApp() {
   const [dashMonth, setDashMonth] = useState('');
   const [dashQuery, setDashQuery] = useState('');
 
-  // Recharts Analytical states
-  const [chartData, setChartData] = useState<{
-    monthlyTrend: any[];
-    storeDistribution: any[];
-    supplierDistribution: any[];
-    courierStats: any[];
-    codSummary: { totalReceived: number; totalPending: number };
-  } | null>(null);
-  const [chartLoading, setChartLoading] = useState(false);
-
-  const loadChartData = async () => {
-    try {
-      setChartLoading(true);
-      const res = await fetch('/api/reports/dashboard');
-      const data = await res.json();
-      if (data.success) {
-        setChartData(data);
-      }
-    } catch (err) {
-      console.error('Error loading chart aggregates:', err);
-    } finally {
-      setChartLoading(false);
-    }
-  };
 
   // Import Page State
   const [importTab, setImportTab] = useState('at');
@@ -437,7 +418,6 @@ export default function OrderFlowApp() {
       const data = await res.json();
       if (data.success) {
         setDb(data.orders || []);
-        await loadChartData();
         await loadImportLogs();
       } else {
         showToast(data.error || 'Failed to load shared database', false);
@@ -696,10 +676,11 @@ export default function OrderFlowApp() {
         for (let index = 0; index < totalRows; index += chunkSize) {
           const chunk = rows.slice(index, index + chunkSize);
           
+          const isLastChunk = index + chunkSize >= totalRows;
           const res = await fetch('/api/orders/chunk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type, chunk, jobId, startIndex: index, forceImport })
+            body: JSON.stringify({ type, chunk, jobId, startIndex: index, forceImport, isLastChunk })
           });
           const data = await res.json();
           
@@ -823,7 +804,7 @@ export default function OrderFlowApp() {
       if (dashMonth && orderMonthKey(o.orderDate) !== dashMonth) return false;
       if (dashQuery) {
         const q = dashQuery.toLowerCase();
-        return [o.orderNo, o.customer, o.sku].some(v => (v || '').toLowerCase().includes(q));
+        if (![o.orderNo, o.customer, o.sku].some(v => (v || '').toLowerCase().includes(q))) return false;
       }
       return true;
     });

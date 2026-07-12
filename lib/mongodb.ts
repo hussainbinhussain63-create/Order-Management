@@ -82,23 +82,19 @@ export async function dbConnect() {
     };
 
     const formattedUri = formatMongoUri(MONGODB_URI!);
-    const maskedUri = formattedUri.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@');
-    console.log('[MongoDB] Creating new connection promise to:', maskedUri);
 
     mongooseCached.promise = mongoose.connect(formattedUri, opts).then((m) => {
-      console.log('[MongoDB] Mongoose successfully connected.');
+      console.log('[MongoDB] Connected successfully.');
       return m;
     }).catch((err) => {
-      console.error('[MongoDB] Mongoose connection promise rejected:', err);
+      console.error('[MongoDB] Connection failed:', err);
       throw err;
     });
   }
 
   try {
     mongooseCached.conn = await mongooseCached.promise;
-    console.log('[MongoDB] Active connection established.');
   } catch (e) {
-    console.error('[MongoDB] Error resolving mongoose connection promise:', e);
     mongooseCached.promise = null;
     throw e;
   }
