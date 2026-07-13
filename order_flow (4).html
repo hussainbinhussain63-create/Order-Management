@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <style>
 :root{
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -109,9 +111,16 @@ textarea:focus{border-color:var(--border-accent)}
 .cbadge{font-size:10px;padding:2px 7px;border-radius:9px;font-weight:500;white-space:nowrap;display:inline-block}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
 th{overflow:hidden;text-overflow:ellipsis;position:relative}
+th[draggable="true"]{cursor:grab;padding-right:20px}
+th[draggable="true"]:active{cursor:grabbing}
+th.col-dragging{opacity:0.35}
+th.col-dragover{box-shadow:inset 2px 0 0 var(--text-accent),inset -2px 0 0 var(--text-accent)}
+.col-del{position:absolute;top:50%;right:9px;transform:translateY(-50%);width:14px;height:14px;line-height:13px;text-align:center;font-size:11px;border-radius:50%;background:var(--surface-2);border:0.5px solid var(--border-strong);color:var(--text-muted);cursor:pointer;display:none;z-index:3}
+th:hover .col-del{display:block}
+.col-del:hover{background:var(--bg-danger);color:var(--text-danger);border-color:var(--border-danger)}
 .col-resizer{position:absolute;right:0;top:0;height:100%;width:6px;cursor:col-resize;user-select:none;z-index:2}
 .col-resizer:hover,.col-resizer.active{background:var(--border-accent)}
-.sku-cell{white-space:normal;max-width:340px;word-break:break-word;overflow-wrap:anywhere;line-height:1.25}
+.sku-cell{white-space:normal;width:200px;min-width:200px;padding:10px 12px !important;word-break:break-word;overflow-wrap:anywhere;line-height:1.35;vertical-align:top}
 .tbl-wrap{position:relative}
 .tbl-scroll-top{overflow-x:auto;overflow-y:hidden;height:12px;border-bottom:0.5px solid var(--border);background:var(--surface-1);position:sticky;top:0;z-index:5}
 .tbl-scroll-top>div{height:1px}
@@ -157,7 +166,7 @@ tr.clickable{cursor:pointer}
   <div class="nav-item" onclick="nav('import',this)" data-nav="import"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Import data</div>
   <div class="nav-item" onclick="nav('orders',this)" data-nav="orders"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18"/><path d="M9 4v16"/></svg> All orders</div>
   <div class="nav-item" onclick="nav('pending',this)" data-nav="pending"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="7" width="13" height="10"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="6" cy="19" r="1.6"/><circle cx="17.5" cy="19" r="1.6"/></svg> Pending supplier</div>
-  <div class="nav-item" onclick="nav('wh',this)" data-nav="wh"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M3 21h18"/><path d="M9 21v-6h6v6"/></svg> Not dispatched 5+ days</div>
+  <div class="nav-item" onclick="nav('wh',this)" data-nav="wh"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M3 21h18"/><path d="M9 21v-6h6v6"/></svg> Not dispatched 7+ days</div>
   <div class="nav-item" onclick="nav('instock',this)" data-nav="instock"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg> Instock queue</div>
   <div class="nav-item" onclick="nav('stockout',this)" data-nav="stockout"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg> Stock out</div>
   <div class="nav-item" onclick="nav('courier-ewe',this)" data-nav="courier-ewe"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.3"/></svg> Courier — EWE</div>
@@ -168,7 +177,9 @@ tr.clickable{cursor:pointer}
     <div class="sa-title">Alerts</div>
     <div class="sa-item" onclick="goToDashSection('sec-dash-bc')"><span class="sa-label">Bill created, not dispatched</span><span class="badge bw" id="sa-bc">0</span></div>
     <div class="sa-item" onclick="goToDashSection('sec-dash-s2')"><span class="sa-label">Suppliers not dispatched 2+ days</span><span class="badge bd" id="sa-s2">0</span></div>
-    <div class="sa-item" onclick="goToDashSection('sec-dash-7d')"><span class="sa-label">Order 5+ days, not dispatched</span><span class="badge bd" id="sa-7d">0</span></div>
+    <div class="sa-item" onclick="goToDashSection('sec-dash-7d')"><span class="sa-label">Order 7+ days, not dispatched</span><span class="badge bd" id="sa-7d">0</span></div>
+    <div class="sa-item" onclick="goToReportSection('sec-rep-codewe')"><span class="sa-label">Delivered — COD not received (Easyway)</span><span class="badge bd" id="sa-codewe">0</span></div>
+    <div class="sa-item" onclick="goToReportSection('sec-rep-codtfm')"><span class="sa-label">Delivered — COD not received (TFM)</span><span class="badge bd" id="sa-codtfm">0</span></div>
     <div class="sa-item" onclick="goToReportSection('sec-rep-holdewe')"><span class="sa-label">On hold — Easyway</span><span class="badge bw" id="sa-holdewe">0</span></div>
     <div class="sa-item" onclick="goToReportSection('sec-rep-holdtfm')"><span class="sa-label">On hold — TFM</span><span class="badge bw" id="sa-holdtfm">0</span></div>
   </div>
@@ -193,14 +204,14 @@ tr.clickable{cursor:pointer}
   <div class="stat-grid">
     <div class="stat"><div class="stat-label">Total orders</div><div class="stat-val c-accent" id="s0">0</div></div>
     <div class="stat"><div class="stat-label">Total dispatched <span style="font-weight:400;color:var(--text-muted)">(from office)</span></div><div class="stat-val c-success" id="s1">0</div></div>
-    <div class="stat"><div class="stat-label">Instock — not dispatched</div><div class="stat-val c-warn" id="s3">0</div></div>
+    <div class="stat" style="cursor:pointer" onclick="goTo('instock')"><div class="stat-label">Instock — not dispatched</div><div class="stat-val c-warn" id="s3">0</div></div>
     <div class="stat"><div class="stat-label">Delivered</div><div class="stat-val c-success" id="s4">0</div></div>
     <div class="stat"><div class="stat-label">Returned</div><div class="stat-val c-danger" id="s5">0</div></div>
     <div class="stat"><div class="stat-label">On hold with Easyway <span style="font-weight:400;color:var(--text-muted)">(neither returned nor delivered)</span></div><div class="stat-val c-warn" id="s6">0</div></div>
     <div class="stat"><div class="stat-label">On hold with TFM <span style="font-weight:400;color:var(--text-muted)">(neither returned nor delivered)</span></div><div class="stat-val c-warn" id="s7">0</div></div>
-    <div class="stat"><div class="stat-label">Order taken 5+ days ago, not dispatched from office</div><div class="stat-val c-danger" id="s8">0</div></div>
+    <div class="stat" style="cursor:pointer" onclick="goTo('wh')"><div class="stat-label">Order taken 7+ days ago, not dispatched from office</div><div class="stat-val c-danger" id="s8">0</div></div>
     <div class="stat"><div class="stat-label">Bill created on courier, not yet dispatched</div><div class="stat-val c-warn" id="s9">0</div></div>
-    <div class="stat"><div class="stat-label">Suppliers not dispatched for more than 2 days</div><div class="stat-val c-danger" id="s10">0</div></div>
+    <div class="stat" style="cursor:pointer" onclick="goTo('pending')"><div class="stat-label">Suppliers not dispatched for more than 2 days</div><div class="stat-val c-danger" id="s10">0</div></div>
   </div>
 
   <div class="section">
@@ -214,7 +225,7 @@ tr.clickable{cursor:pointer}
   </div>
 
   <div class="section" id="sec-dash-7d">
-    <div class="sec-head"><h2><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M3 21h18"/><path d="M9 21v-6h6v6"/></svg> Order taken 5+ days ago — not yet dispatched from office</h2><span class="badge bd" id="b7">0</span></div>
+    <div class="sec-head"><h2><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M3 21h18"/><path d="M9 21v-6h6v6"/></svg> Order taken 7+ days ago — not yet dispatched from office</h2><span class="badge bd" id="b7">0</span></div>
     <div class="tbl-wrap"><table id="tbl-dash-7d"><thead><tr><th>Order date</th><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>SKU</th><th>Supplier</th><th>Days since order</th></tr></thead><tbody id="t7"></tbody></table></div>
   </div>
 
@@ -379,6 +390,7 @@ tr.clickable{cursor:pointer}
 <!-- PENDING SUPPLIER -->
 <div id="view-pending" class="view">
   <div class="section">
+    <div class="sec-head"><h2>Pending supplier</h2><span id="pend-total" style="font-size:12px;color:var(--text-secondary);font-weight:400"></span></div>
     <div class="fbar">
       <select id="fp-store" onchange="renderPending()"><option value="">All stores</option></select>
       <select id="fp-sup" onchange="renderPending()"><option value="">All suppliers</option></select>
@@ -394,7 +406,7 @@ tr.clickable{cursor:pointer}
 <!-- IN WAREHOUSE -->
 <div id="view-wh" class="view">
   <div class="section">
-    <div class="sec-head"><h2>Order — not dispatched from office for 5+ days</h2></div>
+    <div class="sec-head"><h2>Order — not dispatched from office for 7+ days</h2></div>
     <div class="fbar">
       <select id="fwh-store" onchange="renderWH()"><option value="">All stores</option></select>
       <select id="fwh-sup" onchange="renderWH()"><option value="">All suppliers</option></select>
@@ -489,20 +501,20 @@ tr.clickable{cursor:pointer}
     </table></div>
   </div>
 
-  <div class="section">
+  <div class="section" id="sec-rep-codewe">
     <div class="sec-head"><h2>Delivered — COD not received (Easyway)</h2><span class="badge bd" id="r-codewe-c">0</span></div>
     <p style="padding:8px 14px;font-size:11px;color:var(--text-secondary)">Delivered via EWE with no "Received" record in the COD panel. Click a row for full details. Drops off this list automatically once COD is marked received.</p>
     <div class="tbl-wrap"><table id="tbl-rep-codewe">
-      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>COD amount</th><th>COD status</th></tr></thead>
+      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>Barcode</th><th>COD amount</th><th>COD status</th></tr></thead>
       <tbody id="r-codewe"></tbody>
     </table></div>
   </div>
 
-  <div class="section">
+  <div class="section" id="sec-rep-codtfm">
     <div class="sec-head"><h2>Delivered — COD not received (TFM)</h2><span class="badge bd" id="r-codtfm-c">0</span></div>
     <p style="padding:8px 14px;font-size:11px;color:var(--text-secondary)">Delivered via TFM with no "Received" record in the COD panel. Click a row for full details. Drops off this list automatically once COD is marked received.</p>
     <div class="tbl-wrap"><table id="tbl-rep-codtfm">
-      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>COD amount</th><th>COD status</th></tr></thead>
+      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>AWB</th><th>COD amount</th><th>COD status</th></tr></thead>
       <tbody id="r-codtfm"></tbody>
     </table></div>
   </div>
@@ -510,7 +522,7 @@ tr.clickable{cursor:pointer}
   <div class="section" id="sec-rep-holdewe">
     <div class="sec-head"><h2>On hold with Easyway <span style="font-weight:400;color:var(--text-muted)">(neither delivered nor returned)</span></h2><span class="badge bw" id="r-holdewe-c">0</span></div>
     <div class="tbl-wrap"><table id="tbl-rep-holdewe">
-      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>Supplier</th><th>Courier status</th><th>Order value</th></tr></thead>
+      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>Barcode</th><th>Courier status</th><th>Order value</th></tr></thead>
       <tbody id="r-holdewe"></tbody>
     </table></div>
   </div>
@@ -518,7 +530,7 @@ tr.clickable{cursor:pointer}
   <div class="section" id="sec-rep-holdtfm">
     <div class="sec-head"><h2>On hold with TFM <span style="font-weight:400;color:var(--text-muted)">(neither delivered nor returned)</span></h2><span class="badge bw" id="r-holdtfm-c">0</span></div>
     <div class="tbl-wrap"><table id="tbl-rep-holdtfm">
-      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>Supplier</th><th>Courier status</th><th>Order value</th></tr></thead>
+      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>AWB</th><th>Courier status</th><th>Order value</th><th>Last comment</th></tr></thead>
       <tbody id="r-holdtfm"></tbody>
     </table></div>
   </div>
@@ -553,7 +565,25 @@ tr.clickable{cursor:pointer}
 let db=[];
 let dataReady=false;
 
-const TITLES={dash:'Dashboard',import:'Import data',orders:'All orders',pending:'Pending supplier',wh:'Not dispatched 5+ days',instock:'Instock queue',stockout:'Stock out','courier-ewe':'Courier — EWE','courier-tfm':'Courier — TFM',reports:'Reports',orderstatus:'Order status'};
+// ============================================================
+// FIREBASE SETUP — paste your own project's config below.
+// Get this from: Firebase Console → Project settings → General
+// → "Your apps" → the web app (</>) icon → SDK setup and config.
+// ============================================================
+const firebaseConfig={
+  apiKey:"AIzaSyDJ32TaQ7ufHh7eEjjbv0uAAdoo-563E64",
+  authDomain:"order-management-a0562.firebaseapp.com",
+  projectId:"order-management-a0562",
+  storageBucket:"order-management-a0562.firebasestorage.app",
+  messagingSenderId:"850233803801",
+  appId:"1:850233803801:web:001ca1911a0ff5cc68d688"
+};
+firebase.initializeApp(firebaseConfig);
+const fsDB=firebase.firestore();
+const ORDERS_DOC=fsDB.collection('orderflow').doc('orders');
+let applyingRemoteUpdate=false;
+
+const TITLES={dash:'Dashboard',import:'Import data',orders:'All orders',pending:'Pending supplier',wh:'Not dispatched 7+ days',instock:'Instock queue',stockout:'Stock out','courier-ewe':'Courier — EWE','courier-tfm':'Courier — TFM',reports:'Reports',orderstatus:'Order status'};
 
 let monthFilter='';
 function orderMonthKey(dateStr){
@@ -586,20 +616,33 @@ function isCancelled(o){
 
 async function loadData(){
   try{
-    const res=await window.storage.get('orders', true);
-    db = res && res.value ? JSON.parse(res.value) : [];
+    const snap=await ORDERS_DOC.get();
+    db = snap.exists && snap.data().value ? JSON.parse(snap.data().value) : [];
   }catch(e){
     console.error('Load error:',e);
     db=[];
-    toast('Could not load shared data — starting empty',false);
+    toast('Could not load shared data — check your Firebase config',false);
   }
+  loadColPrefs();
   dataReady=true;
   document.getElementById('loading-overlay').style.display='none';
   renderAll();
   initResizables();
   initTopScrollbars();
+  initColumnControls();
   resetScroll();
   toast('Shared data loaded — visible to everyone using this board');
+
+  // Live sync: pick up changes made by other people without needing a refresh.
+  ORDERS_DOC.onSnapshot(snap=>{
+    if(applyingRemoteUpdate)return; // ignore the echo of our own writes
+    if(!snap.exists)return;
+    try{
+      db=snap.data().value?JSON.parse(snap.data().value):[];
+      renderAll();
+      initColumnControls();
+    }catch(e){console.error('Live sync error:',e);}
+  });
 }
 
 function save(){
@@ -609,11 +652,13 @@ function save(){
 
 async function persistData(){
   try{
-    const result=await window.storage.set('orders', JSON.stringify(db), true);
-    if(!result){toast('Save failed — try again',false)}
+    applyingRemoteUpdate=true;
+    await ORDERS_DOC.set({value:JSON.stringify(db),updatedAt:Date.now()});
   }catch(e){
     console.error('Storage error:',e);
     toast('Could not save — your change may not be visible to others yet',false);
+  }finally{
+    setTimeout(()=>{applyingRemoteUpdate=false;},800);
   }
 }
 
@@ -636,6 +681,7 @@ function nav(name,el){
   renderAll();
   initResizables();
   initTopScrollbars();
+  initColumnControls();
   resetScroll();
 }
 
@@ -675,6 +721,7 @@ function makeResizable(table){
     if(i===ths.length-1)return; // no handle on the last column
     const rez=document.createElement('span');
     rez.className='col-resizer';
+    rez.draggable=false;
     th.appendChild(rez);
     rez.addEventListener('mousedown',function(e){
       e.preventDefault();e.stopPropagation();
@@ -691,6 +738,149 @@ function makeResizable(table){
       document.addEventListener('mouseup',up);
     });
   });
+}
+
+// ---- Draggable / deletable table columns -------------------------------
+// Column order & visibility is a personal display preference, so it's saved
+// under shared:false (only affects the current user's own view of the board).
+let colPrefs={};
+
+function loadColPrefs(){
+  try{
+    const raw=localStorage.getItem('orderflow_colPrefs');
+    colPrefs=raw?JSON.parse(raw):{};
+  }catch(e){
+    colPrefs={};
+  }
+}
+function saveColPrefs(){
+  try{
+    localStorage.setItem('orderflow_colPrefs',JSON.stringify(colPrefs));
+  }catch(e){
+    console.error('Could not save column preferences:',e);
+  }
+}
+function getColOrder(key,n){
+  const p=colPrefs[key];
+  return(p&&Array.isArray(p.order)&&p.order.length===n)?p.order.slice():Array.from({length:n},(_,i)=>i);
+}
+function getColHidden(key){
+  const p=colPrefs[key];
+  return new Set(p&&Array.isArray(p.hidden)?p.hidden:[]);
+}
+
+function initColumnControls(){
+  document.querySelectorAll('table[id]').forEach(table=>{
+    if(table.dataset.colInit)return;
+    const theadRow=table.querySelector('thead tr');
+    if(!theadRow||theadRow.children.length<2)return;
+    table.dataset.colInit='1';
+    const key=table.id;
+    Array.from(theadRow.children).forEach((th,i)=>{
+      th.dataset.origIndex=i;
+      th.draggable=true;
+      const del=document.createElement('span');
+      del.className='col-del';
+      del.textContent='×';
+      del.title='Remove this column from view';
+      del.draggable=false;
+      del.onclick=e=>{e.stopPropagation();hideColumn(key,i);};
+      th.appendChild(del);
+      th.addEventListener('dragstart',e=>{
+        th.classList.add('col-dragging');
+        e.dataTransfer.effectAllowed='move';
+        e.dataTransfer.setData('text/plain',String(i));
+      });
+      th.addEventListener('dragend',()=>{
+        th.classList.remove('col-dragging');
+        theadRow.querySelectorAll('.col-dragover').forEach(x=>x.classList.remove('col-dragover'));
+      });
+      th.addEventListener('dragover',e=>{e.preventDefault();th.classList.add('col-dragover');});
+      th.addEventListener('dragleave',()=>th.classList.remove('col-dragover'));
+      th.addEventListener('drop',e=>{
+        e.preventDefault();
+        th.classList.remove('col-dragover');
+        const fromOrig=+e.dataTransfer.getData('text/plain');
+        const toOrig=+th.dataset.origIndex;
+        reorderColumn(key,fromOrig,toOrig);
+      });
+    });
+    applyColumnPrefs(table);
+    const tbody=table.querySelector('tbody');
+    if(tbody){
+      new MutationObserver(()=>{
+        if(table.dataset.applyingCols)return;
+        applyColumnPrefs(table);
+      }).observe(tbody,{childList:true});
+    }
+  });
+}
+
+function reorderColumn(key,fromOrig,toOrig){
+  const table=document.getElementById(key);
+  if(!table||fromOrig===toOrig)return;
+  const n=table.querySelector('thead tr').children.length;
+  const order=getColOrder(key,n);
+  const fromPos=order.indexOf(fromOrig),toPos=order.indexOf(toOrig);
+  if(fromPos<0||toPos<0)return;
+  order.splice(toPos,0,order.splice(fromPos,1)[0]);
+  colPrefs[key]={...(colPrefs[key]||{}),order};
+  saveColPrefs();
+  applyColumnPrefs(table);
+}
+function hideColumn(key,origIndex){
+  const table=document.getElementById(key);
+  if(!table)return;
+  const n=table.querySelector('thead tr').children.length;
+  if(n-getColHidden(key).size<=1)return; // keep at least one column visible
+  const hidden=Array.from(getColHidden(key));
+  if(!hidden.includes(origIndex))hidden.push(origIndex);
+  colPrefs[key]={...(colPrefs[key]||{}),hidden};
+  saveColPrefs();
+  applyColumnPrefs(table);
+}
+function resetColumns(tableId){
+  delete colPrefs[tableId];
+  saveColPrefs();
+  const table=document.getElementById(tableId);
+  if(table)applyColumnPrefs(table);
+}
+
+function applyColumnPrefs(table){
+  const theadRow=table.querySelector('thead tr');
+  if(!theadRow)return;
+  const n=theadRow.children.length;
+  const key=table.id;
+  const order=getColOrder(key,n);
+  const hidden=getColHidden(key);
+  table.dataset.applyingCols='1';
+  order.forEach(origIdx=>{
+    const th=Array.from(theadRow.children).find(el=>+el.dataset.origIndex===origIdx);
+    if(th)theadRow.appendChild(th);
+  });
+  Array.from(theadRow.children).forEach(th=>{
+    th.style.display=hidden.has(+th.dataset.origIndex)?'none':'';
+  });
+  const visibleCount=n-hidden.size;
+  table.querySelectorAll('tbody tr').forEach(row=>{
+    const cells=Array.from(row.children);
+    if(cells.length===n){
+      cells.forEach((cell,idx)=>{if(cell.dataset.ci===undefined)cell.dataset.ci=idx;});
+      order.forEach(origIdx=>{
+        const cell=cells.find(c=>+c.dataset.ci===origIdx);
+        if(cell)row.appendChild(cell);
+      });
+      cells.forEach(cell=>{cell.style.display=hidden.has(+cell.dataset.ci)?'none':'';});
+    } else {
+      cells.forEach(cell=>{
+        if(cell.hasAttribute('colspan')){
+          const others=cells.length-1;
+          cell.setAttribute('colspan',Math.max(1,visibleCount-others));
+        }
+      });
+    }
+  });
+  requestAnimationFrame(()=>{delete table.dataset.applyingCols;});
 }
 
 function initResizables(){
@@ -771,6 +961,8 @@ function norm(h){
   if(s.includes('courierstatus'))return'courierStatusEWE';
   if(s.includes('trackingid')&&s.includes('ewe'))return'trackingEWE';
   if(s.includes('trackingid')&&s.includes('tfm'))return'trackingTFM';
+  if(s==='awb'||s.includes('awbnumber')||s.includes('awbno')||s.includes('airwaybill'))return'trackingTFM';
+  if(s.includes('barcode')||s.includes('barecode'))return'trackingEWE';
   if(s.includes('codstatus'))return'codStatus';
   if(s.includes('courier')&&!s.includes('status')&&!s.includes('track'))return'courier';
   if(s==='tfm')return'tfmCourier';
@@ -821,15 +1013,22 @@ function parseTSV(text){
 function deriveSupStatus(r){
   if((r.orderStatus||'').toLowerCase().includes('cancel'))return'Cancelled';
   const dispatchNote=(r.supplierDispatchDate||'').toLowerCase();
+  const isStockOutText=v=>/sold|stock ?out/.test(v);
+  // The bill_no / supplier-dispatch-date field is the authoritative signal for this:
+  // it's either the words "stock out"/"sold out", or an actual bill date — never both.
+  // So if there's a real value there and it isn't a stock-out marker, it's genuinely dispatched,
+  // regardless of what any other (possibly stale) status field says.
+  if(dispatchNote){
+    if(isStockOutText(dispatchNote))return'STOCK OUT';
+    return'Dispatched';
+  }
   const whNote=(r.receivedInWH||'').toLowerCase();
-  const sold=(r.soldOut||'').toLowerCase().includes('yes')||/sold|stock ?out/.test(dispatchNote)||/sold|stock ?out/.test(whNote);
-  if(sold)return'STOCK OUT';
+  if((r.soldOut||'').toLowerCase().includes('yes')||isStockOutText(whNote))return'STOCK OUT';
   const insVal=(r.instock||'').toLowerCase();
-  const ins=insVal==='yes'||insVal.includes('full')||(!r.supplier&&(r.receivedInWH||'').toLowerCase()==='yes');
+  const ins=insVal==='yes'||insVal.includes('full')||(!r.supplier&&whNote==='yes');
   if(ins)return'INSTOCK';
   if(r.supplierStatus)return r.supplierStatus;
-  if(r.supplier&&r.supplierDispatchDate)return'Dispatched';
-  if(r.supplier&&!r.supplierDispatchDate)return'Not Dispatched';
+  if(r.supplier)return'Not Dispatched';
   return'';
 }
 
@@ -1151,11 +1350,11 @@ function renderDash(){
 
   const daysSince=d=>{ if(!d)return null; const dt=new Date(d); if(isNaN(dt))return null; return Math.max(0,Math.floor((today-dt)/86400000)); };
 
-  // Order taken 5+ days ago and still not dispatched from office
+  // Order taken 7+ days ago and still not dispatched from office
   const pend7=active.filter(o=>{
     if(isDispatchedFromOffice(o))return false;
     const d=daysSince(o.orderDate);
-    return d!==null&&d>5;
+    return d!==null&&d>7;
   }).map(o=>({...o,_days:daysSince(o.orderDate)})).sort((a,b)=>b._days-a._days);
 
   // Bill/shipment created on courier but not yet actually dispatched
@@ -1167,12 +1366,18 @@ function renderDash(){
   });
 
   // Supplier hasn't dispatched (bill/dispatch date not yet recorded) for more than 2 days since order date
-  const supNotDispatched2=active.filter(o=>{
+  const supNotDispatched2Orders=active.filter(o=>{
     if(o.supplierStatus!=='Not Dispatched')return false;
     if(isDelivered(o))return false;
+    if(isDispatchedFromOffice(o))return false; // already moved past the supplier stage — order_status/courier fields say so
     const d=daysSince(o.orderDate);
     return d!==null&&d>2;
   }).map(o=>({...o,_days:daysSince(o.orderDate)})).sort((a,b)=>b._days-a._days);
+  // Count all SKUs from these orders
+  const supNotDispatched2=supNotDispatched2Orders.reduce((total,o)=>{
+    const parts=(o.sku||'').split(',').map(s=>s.trim()).filter(Boolean);
+    return total+(parts.length||1);
+  },0);
 
   document.getElementById('s0').textContent=totalOrders;
   document.getElementById('s1').textContent=dispatched.length;
@@ -1187,10 +1392,10 @@ function renderDash(){
   document.getElementById('bp').textContent=pend.length;
   document.getElementById('b7').textContent=pend7.length;
   document.getElementById('bbc').textContent=billCreated.length;
-  const bs2=document.getElementById('bs2');if(bs2)bs2.textContent=supNotDispatched2.length;
-  const s10=document.getElementById('s10');if(s10)s10.textContent=supNotDispatched2.length;
+  const bs2=document.getElementById('bs2');if(bs2)bs2.textContent=supNotDispatched2;
+  const s10=document.getElementById('s10');if(s10)s10.textContent=supNotDispatched2;
   const saBc=document.getElementById('sa-bc');if(saBc)saBc.textContent=billCreated.length;
-  const saS2=document.getElementById('sa-s2');if(saS2)saS2.textContent=supNotDispatched2.length;
+  const saS2=document.getElementById('sa-s2');if(saS2)saS2.textContent=supNotDispatched2;
   const sa7d=document.getElementById('sa-7d');if(sa7d)sa7d.textContent=pend7.length;
 
   const row=(o,cols)=>`<tr>${cols.map(c=>{
@@ -1215,7 +1420,7 @@ function renderDash(){
   document.getElementById('t7').innerHTML=pend7.length?pend7.map(o=>`<tr>
     <td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
     <td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td class="sku-cell">${o.sku||'-'}</td>
-    <td>${colorBadge(o.supplier)}</td><td><span class="badge bd">${o._days} days</span></td></tr>`).join(''):`<tr><td colspan="8" class="empty">Nothing pending 5+ days</td></tr>`;
+    <td>${colorBadge(o.supplier)}</td><td><span class="badge bd">${o._days} days</span></td></tr>`).join(''):`<tr><td colspan="8" class="empty">Nothing pending 7+ days</td></tr>`;
 
   document.getElementById('tbc').innerHTML=billCreated.length?billCreated.map(o=>{
     const isTFM=(o.courierStatusTFM||'').trim().toLowerCase()==='created';
@@ -1227,7 +1432,7 @@ function renderDash(){
   }).join(''):`<tr><td colspan="7" class="empty">None</td></tr>`;
 
   const ts2=document.getElementById('ts2');
-  if(ts2)ts2.innerHTML=supNotDispatched2.length?supNotDispatched2.map(o=>`<tr>
+  if(ts2)ts2.innerHTML=supNotDispatched2Orders.length?supNotDispatched2Orders.map(o=>`<tr>
     <td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
     <td>${o.customer||'-'}</td><td class="sku-cell">${o.sku||'-'}</td>
     <td>${colorBadge(o.supplier)}</td><td><span class="badge bd">${o._days} days</span></td></tr>`).join(''):`<tr><td colspan="7" class="empty">None</td></tr>`;
@@ -1235,7 +1440,7 @@ function renderDash(){
 
 function renderOrders(){
   fillSel('fo-store',uniq(db.map(o=>o.store)));
-  fillSel('fo-sup',uniq(db.map(o=>o.supplier)));
+  fillSel('fo-sup',uniq(db.map(o=>o.supplier).filter(s=>s&&s!=='NS')));
   const st=document.getElementById('fo-store').value;
   const su=document.getElementById('fo-sup').value;
   const ss=document.getElementById('fo-sup-status').value;
@@ -1247,6 +1452,10 @@ function renderOrders(){
     if(ss&&o.supplierStatus!==ss)return false;
     if(q&&![(o.orderNo||''),(o.customer||''),(o.sku||'')].some(v=>v.toLowerCase().includes(q)))return false;
     return true;
+  }).sort((a,b)=>{
+    const dateA=new Date(a.orderDate||0);
+    const dateB=new Date(b.orderDate||0);
+    return dateB-dateA;
   });
   document.getElementById('to').innerHTML=rows.length?rows.map(o=>`<tr>
     <td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
@@ -1264,7 +1473,7 @@ function renderOrders(){
 
 function renderPending(){
   fillSel('fp-store',uniq(db.map(o=>o.store)));
-  fillSel('fp-sup',uniq(db.map(o=>o.supplier)));
+  fillSel('fp-sup',uniq(db.map(o=>o.supplier).filter(s=>s&&s!=='NS')));
   const st=document.getElementById('fp-store').value;
   const su=document.getElementById('fp-sup').value;
   const q=(document.getElementById('fp-q')?document.getElementById('fp-q').value:'').toLowerCase().trim();
@@ -1274,6 +1483,7 @@ function renderPending(){
     if(ss!=='Not Dispatched'&&!ss.startsWith('Partially dispatched'))return false;
     if(isCancelled(o))return false;
     if(isDelivered(o))return false;
+    if(isDispatchedFromOffice(o))return false;
     if(!inSelectedMonth(o))return false;
     if(st&&o.store!==st)return false;
     if(q&&!(o.orderNo||'').toLowerCase().includes(q))return false;
@@ -1292,7 +1502,7 @@ function renderPending(){
       const code=skuCode(part);
       const hasDetail=!!(o.skuDetails&&Object.prototype.hasOwnProperty.call(o.skuDetails,code));
       const detail=hasDetail?o.skuDetails[code]:{};
-      const supplier=hasDetail?(detail.supplier||o.supplier||'-'):(o.supplier||'-');
+      const supplier=hasDetail?(detail.supplier||'NS'):'NS';
       const supplierStatus=hasDetail?(detail.supplierStatus||''):(o.supplierStatus||'');
       const dispatchDate=(hasDetail?(detail.supplierDispatchDate||''):(o.supplierDispatchDate||'')).trim();
       if(dispatchDate)return; // this specific SKU has already been dispatched by the supplier
@@ -1302,20 +1512,29 @@ function renderPending(){
       shown=true;
     });
   });
-  document.getElementById('tpend').innerHTML=lines.length?lines.map(({o,part,supplier,first})=>{
+  // Sort by order date ascending (oldest first)
+  lines.sort((a,b)=>{
+    const dateA=new Date(a.o.orderDate||0);
+    const dateB=new Date(b.o.orderDate||0);
+    return dateA-dateB;
+  });
+  const totalOrders=uniq(lines.map(l=>l.o.orderNo)).length;
+  const totalEl=document.getElementById('pend-total');
+  if(totalEl)totalEl.textContent=`Total: ${totalOrders} order${totalOrders!==1?'s':''}`;
+  document.getElementById('tpend').innerHTML=(lines.length?lines.map(({o,part,supplier,first})=>{
     const days=o.orderDate?Math.max(0,Math.floor((today-new Date(o.orderDate))/86400000)):'-';
     const dc=typeof days==='number'?(days>5?'bd':days>2?'bw':'bn'):'bn';
     const commentTd=commentCell(o);
     return`<tr class="clickable" ${rowAttrs(o)}><td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
     <td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td class="sku-cell">${part}</td><td>${colorBadge(supplier)}</td>
     <td>${sb('Not Dispatched')}</td><td><span class="badge ${dc}">${days} days</span></td>${commentTd}</tr>`;
-  }).join(''):`<tr><td colspan="10" class="empty">No pending items</td></tr>`;
+  }).join(''):`<tr><td colspan="10" class="empty">No pending items</td></tr>`);
 }
 
 
 function renderWH(){
   fillSel('fwh-store',uniq(db.map(o=>o.store)));
-  fillSel('fwh-sup',uniq(db.map(o=>o.supplier)));
+  fillSel('fwh-sup',uniq(db.map(o=>o.supplier).filter(s=>s&&s!=='NS')));
   const st=document.getElementById('fwh-store').value;
   const su=document.getElementById('fwh-sup').value;
   const q=(document.getElementById('fwh-q').value||'').toLowerCase();
@@ -1326,12 +1545,13 @@ function renderWH(){
     if(isReturned(o))return false;
     if(!inSelectedMonth(o))return false;
     if(isDispatchedFromOffice(o))return false;
+    if(/dispatch|deliver|return|cancel/i.test(o.orderStatus||''))return false;
     const refDate=o.supplierDispatchDate||o.orderDate;
     if(!refDate)return false;
     const d=new Date(refDate);
     if(isNaN(d))return false;
     const days=Math.floor((today-d)/86400000);
-    if(days<=5)return false;
+    if(days<=7)return false;
     if(st&&o.store!==st)return false;
     if(su&&o.supplier!==su)return false;
     if(q&&![(o.orderNo||''),(o.customer||''),(o.sku||'')].some(v=>v.toLowerCase().includes(q)))return false;
@@ -1359,6 +1579,10 @@ function renderInstock(){
     if(st&&o.store!==st)return false;
     if(q&&![(o.orderNo||''),(o.customer||''),(o.sku||'')].some(v=>v.toLowerCase().includes(q)))return false;
     return true;
+  }).sort((a,b)=>{
+    const dateA=new Date(a.orderDate||0);
+    const dateB=new Date(b.orderDate||0);
+    return dateB-dateA;
   });
   document.getElementById('tins').innerHTML=rows.length?rows.map(o=>`<tr>
     <td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
@@ -1370,7 +1594,15 @@ function renderStockOut(){
   const st=document.getElementById('fso-store').value;
   const q=(document.getElementById('fso-q').value||'').toLowerCase();
   const candidates=db.filter(o=>{
-    if(o.supplierStatus!=='STOCK OUT')return false;
+    // Check either the order-level supplierStatus is STOCK OUT, OR at least
+    // one individual SKU on this order has a per-SKU STOCK OUT status. The
+    // order-level status only becomes STOCK OUT when EVERY sku on the order
+    // is stock out (see recomputeOrderAggregate), so relying on it alone
+    // silently drops orders where only some of the SKUs are stock out.
+    const isStockOutByStatus=o.supplierStatus==='STOCK OUT';
+    const anySkuStockOut=!!(o.skuDetails&&Object.values(o.skuDetails).some(d=>d.supplierStatus==='STOCK OUT'));
+    const isStockOut=isStockOutByStatus||anySkuStockOut;
+    if(!isStockOut)return false;
     if(isCancelled(o))return false;
     if(!inSelectedMonth(o))return false;
     if(st&&o.store!==st)return false;
@@ -1390,12 +1622,19 @@ function renderStockOut(){
       const code=skuCode(part);
       const hasDetail=!!(o.skuDetails&&Object.prototype.hasOwnProperty.call(o.skuDetails,code));
       const detail=hasDetail?o.skuDetails[code]:{};
-      const supplier=hasDetail?(detail.supplier||o.supplier||'-'):(o.supplier||'-');
+      const supplier=hasDetail?(detail.supplier||'NS'):'NS';
       const status=hasDetail?(detail.supplierStatus||''):(o.supplierStatus||'');
-      if(hasDetail&&status!=='STOCK OUT')return;
+      // Skip any SKU line whose own status isn't STOCK OUT.
+      if(status!=='STOCK OUT')return;
       const note=(hasDetail?(detail.supplierDispatchDate||''):(o.supplierDispatchDate||''))||'-';
       lines.push({o,part,supplier,note});
     });
+  });
+  // Sort by order date descending (latest first)
+  lines.sort((a,b)=>{
+    const dateA=new Date(a.o.orderDate||0);
+    const dateB=new Date(b.o.orderDate||0);
+    return dateB-dateA;
   });
   document.getElementById('tso').innerHTML=lines.length?lines.map(({o,part,supplier,note})=>`<tr>
     <td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
@@ -1445,6 +1684,10 @@ function renderCourierFor(courier){
     if(cs&&o[statusField]!==cs)return false;
     if(q&&![(o.orderNo||''),(o.customer||''),(o[trackField]||'')].some(v=>v.toLowerCase().includes(q)))return false;
     return true;
+  }).sort((a,b)=>{
+    const dateA=new Date(a.orderDate||0);
+    const dateB=new Date(b.orderDate||0);
+    return dateB-dateA;
   });
   if(courier==='TFM'){
     document.getElementById('tcour-'+p).innerHTML=rows.length?rows.map(o=>`<tr class="clickable" ${rowAttrs(o)}>
@@ -1504,6 +1747,8 @@ function renderReports(){
   document.getElementById('r-holdtfm-c').textContent=onHoldTFM.length;
   const saHoldEWE=document.getElementById('sa-holdewe');if(saHoldEWE)saHoldEWE.textContent=onHoldEWE.length;
   const saHoldTFM=document.getElementById('sa-holdtfm');if(saHoldTFM)saHoldTFM.textContent=onHoldTFM.length;
+  const saCodEWE=document.getElementById('sa-codewe');if(saCodEWE)saCodEWE.textContent=codPendingEWE.length;
+  const saCodTFM=document.getElementById('sa-codtfm');if(saCodTFM)saCodTFM.textContent=codPendingTFM.length;
 
   const attrs=o=>`data-order="${(o.orderNo||'').replace(/"/g,'&quot;')}" data-sku="${(o.sku||'').replace(/"/g,'&quot;')}"`;
 
@@ -1516,25 +1761,32 @@ function renderReports(){
 
   document.getElementById('r-codewe').innerHTML=codPendingEWE.length?codPendingEWE.map(o=>`<tr class="clickable" ${attrs(o)}>
     <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td><td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td>
+    <td style="font-size:10px">${o.trackingEWE||'-'}</td>
     <td>${o.codAmountReceived||o.orderValue||'-'}</td><td>${sb(o.codStatus||'Pending')}</td></tr>`).join('')
-    +`<tr class="tbl-total"><td colspan="4" style="text-align:right">Total</td><td>${fmtAmt(sumAmount(codPendingEWE))}</td><td></td></tr>`
-    :`<tr><td colspan="6" class="empty">None</td></tr>`;
+    +`<tr class="tbl-total"><td colspan="5" style="text-align:right">Total</td><td>${fmtAmt(sumAmount(codPendingEWE))}</td><td></td></tr>`
+    :`<tr><td colspan="7" class="empty">None</td></tr>`;
 
   document.getElementById('r-codtfm').innerHTML=codPendingTFM.length?codPendingTFM.map(o=>`<tr class="clickable" ${attrs(o)}>
     <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td><td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td>
+    <td style="font-size:10px">${o.trackingTFM||'-'}</td>
     <td>${o.codAmountReceived||o.orderValue||'-'}</td><td>${sb(o.codStatus||'Pending')}</td></tr>`).join('')
-    +`<tr class="tbl-total"><td colspan="4" style="text-align:right">Total</td><td>${fmtAmt(sumAmount(codPendingTFM))}</td><td></td></tr>`
-    :`<tr><td colspan="6" class="empty">None</td></tr>`;
+    +`<tr class="tbl-total"><td colspan="5" style="text-align:right">Total</td><td>${fmtAmt(sumAmount(codPendingTFM))}</td><td></td></tr>`
+    :`<tr><td colspan="7" class="empty">None</td></tr>`;
 
   document.getElementById('r-holdewe').innerHTML=onHoldEWE.length?onHoldEWE.map(o=>`<tr class="clickable" ${attrs(o)}>
-    <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td><td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td>${colorBadge(o.supplier)}</td><td>${sb(o.courierStatusEWE)}</td><td>${o.orderValue||'-'}</td></tr>`).join('')
+    <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td><td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td>
+    <td style="font-size:10px">${o.trackingEWE||'-'}</td>
+    <td>${sb(o.courierStatusEWE)}</td><td>${o.orderValue||'-'}</td></tr>`).join('')
     +`<tr class="tbl-total"><td colspan="6" style="text-align:right">Total</td><td>${fmtAmt(sumAmount(onHoldEWE.map(o=>({orderValue:o.orderValue}))))}</td></tr>`
     :`<tr><td colspan="7" class="empty">Nothing on hold</td></tr>`;
 
   document.getElementById('r-holdtfm').innerHTML=onHoldTFM.length?onHoldTFM.map(o=>`<tr class="clickable" ${attrs(o)}>
-    <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td><td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td>${colorBadge(o.supplier)}</td><td>${sb(o.courierStatusTFM)}</td><td>${o.orderValue||'-'}</td></tr>`).join('')
-    +`<tr class="tbl-total"><td colspan="6" style="text-align:right">Total</td><td>${fmtAmt(sumAmount(onHoldTFM.map(o=>({orderValue:o.orderValue}))))}</td></tr>`
-    :`<tr><td colspan="7" class="empty">Nothing on hold</td></tr>`;
+    <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td><td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td>
+    <td style="font-size:10px">${o.trackingTFM||'-'}</td>
+    <td>${sb(o.courierStatusTFM)}</td><td>${o.orderValue||'-'}</td>
+    <td style="max-width:200px;white-space:normal;font-size:10px;color:var(--text-secondary)">${o.lastComment||'-'}</td></tr>`).join('')
+    +`<tr class="tbl-total"><td colspan="6" style="text-align:right">Total</td><td>${fmtAmt(sumAmount(onHoldTFM.map(o=>({orderValue:o.orderValue}))))}</td><td></td></tr>`
+    :`<tr><td colspan="8" class="empty">Nothing on hold</td></tr>`;
 }
 
 function renderOrderStatus(){
@@ -1659,7 +1911,7 @@ function itemsBreakdown(o){
       // "supplier confirmed this SKU isn't dispatched yet"), trust it as-is —
       // don't fall back to the order-level fields, which can be polluted by
       // a sibling SKU's status when several SKUs share one order row.
-      const supplier=hasDetail?(detail.supplier||item.supplier||'-'):(item.supplier||'-');
+      const supplier=hasDetail?(detail.supplier||'NS'):'NS';
       const supplierStatus=hasDetail?(detail.supplierStatus||''):(item.supplierStatus||'');
       const date=(hasDetail?(detail.supplierDispatchDate||''):(item.supplierDispatchDate||'')).trim();
       const receivedInWH=hasDetail?(detail.receivedInWH||''):(item.receivedInWH||'');
