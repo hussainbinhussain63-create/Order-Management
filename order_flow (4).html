@@ -1,1 +1,2166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OrderFlow — order tracking</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 6px;
 
+  --surface-1: #f7f7f8;
+  --surface-2: #ffffff;
+
+  --text-primary: #1a1a1e;
+  --text-secondary: #6b6b74;
+  --text-muted: #9a9aa2;
+
+  --border: #e4e4e8;
+  --border-strong: #cfcfd6;
+
+  --fill-accent: #4f5bd5;
+  --on-accent: #ffffff;
+  --text-accent: #4f5bd5;
+  --bg-accent: #eeeffc;
+  --border-accent: #4f5bd5;
+
+  --text-danger: #c0392b;
+  --bg-danger: #fbeae8;
+  --border-danger: #e6a49b;
+
+  --text-warning: #9a6b00;
+  --bg-warning: #fdf3d9;
+  --border-warning: #eccf7f;
+
+  --text-success: #1e7e4b;
+  --bg-success: #e5f5ec;
+  --border-success: #9ed4b6;
+
+  --text-pro: #7a3fc9;
+  --bg-pro: #f2e9fc;
+}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);font-size:13px;color:var(--text-primary)}
+.app{display:flex;height:100vh;min-height:620px}
+.sidebar{width:190px;min-width:190px;border-right:0.5px solid var(--border);padding:12px 0;display:flex;flex-direction:column;gap:1px;background:var(--surface-1)}
+.logo{padding:8px 14px 12px;font-size:14px;font-weight:500;border-bottom:0.5px solid var(--border);margin-bottom:6px;display:flex;align-items:center;gap:8px;color:var(--text-primary)}
+.nav-item{display:flex;align-items:center;gap:9px;padding:7px 14px;cursor:pointer;color:var(--text-secondary);font-size:12px;transition:background 0.1s}
+.nav-item:hover{background:var(--surface-2);color:var(--text-primary)}
+.nav-item.active{background:var(--bg-accent);color:var(--text-accent);font-weight:500}
+.nav-item i{font-size:15px}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.topbar{padding:10px 16px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface-2)}
+.topbar h1{font-size:15px;font-weight:500}
+.btn{padding:5px 12px;border-radius:var(--radius);border:0.5px solid var(--border-strong);background:transparent;color:var(--text-primary);cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px;font-family:var(--font-sans)}
+.btn:hover{background:var(--surface-1)}
+.btn.primary{background:var(--fill-accent);color:var(--on-accent);border-color:var(--fill-accent)}
+.btn.primary:hover{opacity:0.9}
+.content{flex:1;overflow-y:auto;padding:16px}
+.stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
+.stat{background:var(--surface-1);border-radius:var(--radius);padding:12px 14px}
+.stat-label{font-size:11px;color:var(--text-secondary);margin-bottom:3px;line-height:1.3}
+.stat-val{font-size:20px;font-weight:500}
+.c-danger{color:var(--text-danger)}.c-warn{color:var(--text-warning)}.c-success{color:var(--text-success)}.c-accent{color:var(--text-accent)}.c-muted{color:var(--text-secondary)}
+.section{background:var(--surface-2);border:0.5px solid var(--border);border-radius:10px;margin-bottom:14px}
+.section>*:first-child{border-radius:10px 10px 0 0}
+.section>*:last-child{border-radius:0 0 10px 10px}
+.sec-head{padding:10px 14px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.sec-head h2{font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px}
+.badge{font-size:10px;padding:2px 7px;border-radius:9px;font-weight:500;display:inline-block;white-space:nowrap}
+.bw{background:var(--bg-warning);color:var(--text-warning)}
+.bd{background:var(--bg-danger);color:var(--text-danger)}
+.bs{background:var(--bg-success);color:var(--text-success)}
+.ba{background:var(--bg-accent);color:var(--text-accent)}
+.bn{background:var(--surface-1);color:var(--text-secondary);border:0.5px solid var(--border)}
+.bp{background:var(--bg-pro);color:var(--text-pro)}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{text-align:left;padding:7px 8px;color:var(--text-secondary);font-weight:400;font-size:10px;border-bottom:0.5px solid var(--border);white-space:nowrap;background:var(--surface-1)}
+td{padding:7px 8px;border-bottom:0.5px solid var(--border);vertical-align:middle;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surface-1)}
+.view{display:none}.view.active{display:block}
+.tab-bar{display:flex;border-bottom:0.5px solid var(--border)}
+.tab{padding:9px 14px;font-size:12px;cursor:pointer;color:var(--text-secondary);border-bottom:2px solid transparent;margin-bottom:-0.5px}
+.tab.active{color:var(--text-accent);border-bottom-color:var(--fill-accent);font-weight:500}
+.import-box{border:1.5px dashed var(--border-strong);border-radius:10px;padding:16px;margin-bottom:12px;background:var(--surface-1)}
+.import-box h3{font-size:12px;font-weight:500;margin-bottom:4px}
+.import-box p{font-size:11px;color:var(--text-secondary);margin-bottom:10px}
+textarea{width:100%;min-height:90px;border:0.5px solid var(--border-strong);border-radius:var(--radius);background:var(--surface-2);color:var(--text-primary);font-size:11px;font-family:var(--font-mono);padding:7px;resize:vertical;outline:none}
+textarea:focus{border-color:var(--border-accent)}
+.file-drop{border:1.5px dashed var(--border-strong);border-radius:var(--radius);padding:14px;text-align:center;cursor:pointer;background:var(--surface-2);margin-bottom:8px}
+.file-drop:hover{background:var(--surface-1)}
+.result-box{padding:9px 12px;border-radius:var(--radius);margin-top:8px;font-size:12px}
+.rok{background:var(--bg-success);color:var(--text-success)}
+.rwarn{background:var(--bg-warning);color:var(--text-warning)}
+.fbar{padding:8px 12px;display:flex;gap:7px;border-bottom:0.5px solid var(--border);flex-wrap:wrap;align-items:center;background:var(--surface-1)}
+.fbar select,.fbar input{padding:4px 8px;border-radius:var(--radius);border:0.5px solid var(--border-strong);background:var(--surface-2);color:var(--text-primary);font-size:11px;font-family:var(--font-sans)}
+.fbar input{min-width:160px}
+.empty{padding:28px;text-align:center;color:var(--text-muted);font-size:12px}
+.toast{position:fixed;bottom:16px;right:16px;padding:9px 14px;border-radius:var(--radius);font-size:12px;display:none;z-index:999;border:0.5px solid}
+.sp{font-size:10px;padding:2px 6px;border-radius:7px;font-weight:500;background:var(--bg-pro);color:var(--text-pro)}
+.logic-row{display:flex;gap:8px;flex-wrap:wrap;padding:10px 14px;border-bottom:0.5px solid var(--border);font-size:11px;color:var(--text-secondary);align-items:center}
+.cbadge{font-size:10px;padding:2px 7px;border-radius:9px;font-weight:500;white-space:nowrap;display:inline-block}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+th{overflow:hidden;text-overflow:ellipsis;position:relative}
+th[draggable="true"]{cursor:grab;padding-right:20px}
+th[draggable="true"]:active{cursor:grabbing}
+th.col-dragging{opacity:0.35}
+th.col-dragover{box-shadow:inset 2px 0 0 var(--text-accent),inset -2px 0 0 var(--text-accent)}
+.col-del{position:absolute;top:50%;right:9px;transform:translateY(-50%);width:14px;height:14px;line-height:13px;text-align:center;font-size:11px;border-radius:50%;background:var(--surface-2);border:0.5px solid var(--border-strong);color:var(--text-muted);cursor:pointer;display:none;z-index:3}
+th:hover .col-del{display:block}
+.col-del:hover{background:var(--bg-danger);color:var(--text-danger);border-color:var(--border-danger)}
+.col-resizer{position:absolute;right:0;top:0;height:100%;width:6px;cursor:col-resize;user-select:none;z-index:2}
+.col-resizer:hover,.col-resizer.active{background:var(--border-accent)}
+.sku-cell{white-space:normal;width:200px;min-width:200px;padding:10px 12px !important;word-break:break-word;overflow-wrap:anywhere;line-height:1.35;vertical-align:top}
+.tbl-wrap{position:relative}
+.tbl-scroll-top{overflow-x:auto;overflow-y:hidden;height:12px;border-bottom:0.5px solid var(--border);background:var(--surface-1);position:sticky;top:0;z-index:5}
+.tbl-scroll-top>div{height:1px}
+.tbl-scroll-top::-webkit-scrollbar{height:10px}
+.tbl-scroll-top::-webkit-scrollbar-track{background:var(--surface-1)}
+.tbl-scroll-top::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:6px}
+.tbl-scroll-top{scrollbar-width:thin;scrollbar-color:var(--border-strong) var(--surface-1)}
+.tbl-wrap::-webkit-scrollbar{height:10px}
+.tbl-wrap::-webkit-scrollbar-track{background:var(--surface-1)}
+.tbl-wrap::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:6px}
+.tbl-wrap::-webkit-scrollbar-thumb:hover{background:var(--text-muted)}
+.tbl-wrap{scrollbar-width:thin;scrollbar-color:var(--border-strong) var(--surface-1)}
+tr.clickable{cursor:pointer}
+.sidebar-alerts{border-top:0.5px solid var(--border);margin-top:6px;padding-top:8px}
+.sa-title{padding:4px 14px 6px;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted);font-weight:500}
+.sa-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 14px;cursor:pointer;color:var(--text-secondary);font-size:11px;line-height:1.3}
+.sa-item:hover{background:var(--surface-2);color:var(--text-primary)}
+.sa-item .sa-label{flex:1}
+.sa-item .badge{flex-shrink:0}
+.comment-input{width:100%;min-width:110px;border:0.5px solid var(--border-strong);border-radius:4px;padding:3px 6px;font-size:11px;font-family:var(--font-sans);background:var(--surface-2);color:var(--text-primary);outline:none}
+.comment-input:focus{border-color:var(--border-accent)}
+.tbl-total td{font-weight:600;background:var(--surface-1);border-top:1px solid var(--border-strong)}
+/* Order Details Modal */
+.order-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;overflow-y:auto}
+.order-modal.active{display:flex;align-items:flex-start;justify-content:center;padding:20px}
+.order-modal-content{background:var(--surface-1);border-radius:8px;max-width:900px;width:100%;margin-top:20px;box-shadow:0 4px 12px rgba(0,0,0,0.15)}
+.order-modal-header{padding:20px;border-bottom:1px solid var(--border-strong);display:flex;justify-content:space-between;align-items:center}
+.order-modal-title{font-size:18px;font-weight:600;color:var(--text-primary)}
+.order-modal-close{background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-secondary);width:32px;height:32px;display:flex;align-items:center;justify-content:center}
+.order-modal-close:hover{color:var(--text-primary)}
+.order-modal-body{padding:20px}
+/* Timeline */
+.shipment-timeline{display:flex;gap:0;margin-bottom:30px;position:relative}
+.shipment-timeline::before{content:'';position:absolute;top:20px;left:0;right:0;height:2px;background:var(--border-strong);z-index:0}
+.timeline-step{flex:1;position:relative;z-index:1}
+.timeline-dot{width:40px;height:40px;background:var(--surface-2);border:2px solid var(--border-strong);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:10px}
+.timeline-step.completed .timeline-dot{background:#4caf50;border-color:#4caf50;color:white}
+.timeline-step.pending .timeline-dot{background:var(--surface-2);border-color:var(--border-strong);color:var(--text-secondary)}
+.timeline-label{font-size:12px;font-weight:600;color:var(--text-primary)}
+.timeline-date{font-size:10px;color:var(--text-secondary);margin-top:4px}
+/* Info Sections */
+.order-info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;margin-bottom:30px}
+.info-section{background:var(--surface-2);border:1px solid var(--border-strong);border-radius:6px;padding:15px}
+.info-section-title{font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:12px}
+.info-row{display:flex;justify-content:space-between;padding:6px 0;font-size:12px;border-bottom:1px solid var(--border-strong)}
+.info-row:last-child{border-bottom:none}
+.info-label{color:var(--text-secondary);flex-shrink:0;margin-right:10px}
+.info-value{color:var(--text-primary);font-weight:500;text-align:right;flex:1}
+/* Items Breakdown */
+.items-breakdown{background:var(--surface-2);border:1px solid var(--border-strong);border-radius:6px;padding:15px}
+.items-breakdown-title{font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:12px}
+.items-table{width:100%;border-collapse:collapse;font-size:11px}
+.items-table th{background:var(--surface-1);padding:8px;text-align:left;font-weight:600;color:var(--text-primary);border-bottom:1px solid var(--border-strong)}
+.items-table td{padding:8px;border-bottom:1px solid var(--border-strong);color:var(--text-primary)}
+.items-table tr:hover{background:var(--surface-1)}
+.customer-order-count{background:#e3f2fd;border-left:3px solid #2196f3;padding:10px;border-radius:3px;margin-bottom:15px;font-size:12px;color:#1565c0;font-weight:500}
+</style>
+</head>
+<body>
+
+<h2 class="sr-only">UAE order management system — full column tracking per order</h2>
+
+<div class="app">
+<div class="sidebar">
+  <div class="logo"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg> OrderFlow</div>
+  <div class="nav-item active" onclick="nav('dash',this)" data-nav="dash"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg> Dashboard</div>
+  <div class="nav-item" onclick="nav('import',this)" data-nav="import"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Import data</div>
+  <div class="nav-item" onclick="nav('orderstatus',this)" data-nav="orderstatus"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg> Order status</div>
+  <div class="nav-item" onclick="nav('orders',this)" data-nav="orders"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18"/><path d="M9 4v16"/></svg> All orders</div>
+  <div class="nav-item" onclick="nav('pending',this)" data-nav="pending"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="7" width="13" height="10"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="6" cy="19" r="1.6"/><circle cx="17.5" cy="19" r="1.6"/></svg> Pending supplier</div>
+  <div class="nav-item" onclick="nav('wh',this)" data-nav="wh"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M3 21h18"/><path d="M9 21v-6h6v6"/></svg> Not dispatched 7+ days</div>
+  <div class="nav-item" onclick="nav('instock',this)" data-nav="instock"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg> Instock queue</div>
+  <div class="nav-item" onclick="nav('stockout',this)" data-nav="stockout"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg> Stock out</div>
+  <div class="nav-item" onclick="nav('courier-ewe',this)" data-nav="courier-ewe"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.3"/></svg> Courier — EWE</div>
+  <div class="nav-item" onclick="nav('courier-tfm',this)" data-nav="courier-tfm"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.3"/></svg> Courier — TFM</div>
+  <div class="nav-item" onclick="nav('reports',this)" data-nav="reports"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17v-6"/><path d="M13 17V7"/><path d="M17 17v-3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg> Reports</div>
+  <div class="sidebar-alerts">
+    <div class="sa-title">Alerts</div>
+    <div class="sa-item" onclick="goToDashSection('sec-dash-bc')"><span class="sa-label">Bill created, not dispatched</span><span class="badge bw" id="sa-bc">0</span></div>
+    <div class="sa-item" onclick="goToDashSection('sec-dash-s2')"><span class="sa-label">Suppliers not dispatched 2+ days</span><span class="badge bd" id="sa-s2">0</span></div>
+    <div class="sa-item" onclick="goToDashSection('sec-dash-7d')"><span class="sa-label">Order 7+ days, not dispatched</span><span class="badge bd" id="sa-7d">0</span></div>
+    <div class="sa-item" onclick="goToReportSection('sec-rep-codewe')"><span class="sa-label">Delivered — COD not received (Easyway)</span><span class="badge bd" id="sa-codewe">0</span></div>
+    <div class="sa-item" onclick="goToReportSection('sec-rep-codtfm')"><span class="sa-label">Delivered — COD not received (TFM)</span><span class="badge bd" id="sa-codtfm">0</span></div>
+    <div class="sa-item" onclick="goToReportSection('sec-rep-holdewe')"><span class="sa-label">On hold — Easyway</span><span class="badge bw" id="sa-holdewe">0</span></div>
+    <div class="sa-item" onclick="goToReportSection('sec-rep-holdtfm')"><span class="sa-label">On hold — TFM</span><span class="badge bw" id="sa-holdtfm">0</span></div>
+  </div>
+</div>
+
+<div class="main">
+<div class="topbar">
+  <h1 id="ptitle">Dashboard</h1>
+  <div style="display:flex;gap:6px;align-items:center">
+    <select id="month-filter" onchange="setMonthFilter(this.value)" style="padding:5px 10px;border-radius:var(--radius);border:0.5px solid var(--border-strong);background:var(--surface-2);font-size:12px;font-family:var(--font-sans)">
+      <option value="">All months</option>
+    </select>
+    <button class="btn" onclick="exportCSV()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg> Export</button>
+    <button class="btn" style="color:var(--text-danger);border-color:var(--border-danger)" onclick="if(confirm('Clear all data? This is shared — it will remove it for everyone.')){db=[];save()}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg> Clear</button>
+  </div>
+</div>
+
+<div class="content">
+
+<!-- DASHBOARD -->
+<div id="view-dash" class="view active">
+  <div class="stat-grid">
+    <div class="stat"><div class="stat-label">Total orders</div><div class="stat-val c-accent" id="s0">0</div></div>
+    <div class="stat"><div class="stat-label">Total dispatched <span style="font-weight:400;color:var(--text-muted)">(from office)</span></div><div class="stat-val c-success" id="s1">0</div></div>
+    <div class="stat" style="cursor:pointer" onclick="goTo('instock')"><div class="stat-label">Instock — not dispatched</div><div class="stat-val c-warn" id="s3">0</div></div>
+    <div class="stat"><div class="stat-label">Delivered</div><div class="stat-val c-success" id="s4">0</div></div>
+    <div class="stat"><div class="stat-label">Returned</div><div class="stat-val c-danger" id="s5">0</div></div>
+    <div class="stat"><div class="stat-label">On hold with Easyway <span style="font-weight:400;color:var(--text-muted)">(neither returned nor delivered)</span></div><div class="stat-val c-warn" id="s6">0</div></div>
+    <div class="stat"><div class="stat-label">On hold with TFM <span style="font-weight:400;color:var(--text-muted)">(neither returned nor delivered)</span></div><div class="stat-val c-warn" id="s7">0</div></div>
+    <div class="stat" style="cursor:pointer" onclick="goTo('wh')"><div class="stat-label">Order taken 7+ days ago, not dispatched from office</div><div class="stat-val c-danger" id="s8">0</div></div>
+    <div class="stat"><div class="stat-label">Bill created on courier, not yet dispatched</div><div class="stat-val c-warn" id="s9">0</div></div>
+    <div class="stat" style="cursor:pointer" onclick="goTo('pending')"><div class="stat-label">Suppliers not dispatched for more than 2 days</div><div class="stat-val c-danger" id="s10">0</div></div>
+  </div>
+
+  <div class="section">
+    <div class="sec-head"><h2><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg> Instock — not dispatched to customer</h2><span class="badge bw" id="bi">0</span></div>
+    <div class="tbl-wrap"><table id="tbl-dash-ins"><thead><tr><th>Order date</th><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>SKU</th><th>Order value</th></tr></thead><tbody id="ti"></tbody></table></div>
+  </div>
+
+  <div class="section">
+    <div class="sec-head"><h2><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="7" width="13" height="10"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="6" cy="19" r="1.6"/><circle cx="17.5" cy="19" r="1.6"/></svg> Pending from supplier</h2><span class="badge bd" id="bp">0</span></div>
+    <div class="tbl-wrap"><table id="tbl-dash-pend"><thead><tr><th>Order date</th><th>Order no.</th><th>Store</th><th>Customer</th><th>SKU</th><th>Supplier</th><th>Supplier status</th><th>Days waiting</th></tr></thead><tbody id="tp"></tbody></table></div>
+  </div>
+
+  <div class="section" id="sec-dash-7d">
+    <div class="sec-head"><h2><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M3 21h18"/><path d="M9 21v-6h6v6"/></svg> Order taken 7+ days ago — not yet dispatched from office</h2><span class="badge bd" id="b7">0</span></div>
+    <div class="tbl-wrap"><table id="tbl-dash-7d"><thead><tr><th>Order date</th><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>SKU</th><th>Supplier</th><th>Days since order</th></tr></thead><tbody id="t7"></tbody></table></div>
+  </div>
+
+  <div class="section" id="sec-dash-bc">
+    <div class="sec-head"><h2><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.3"/></svg> Bill created on courier — not yet dispatched</h2><span class="badge bw" id="bbc">0</span></div>
+    <div class="tbl-wrap"><table id="tbl-dash-bc"><thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>SKU</th><th>Courier</th><th>Status</th></tr></thead><tbody id="tbc"></tbody></table></div>
+  </div>
+  <div class="section" id="sec-dash-s2">
+    <div class="sec-head"><h2><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="7" width="13" height="10"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="6" cy="19" r="1.6"/><circle cx="17.5" cy="19" r="1.6"/></svg> Suppliers not dispatched — more than 2 days</h2><span class="badge bd" id="bs2">0</span></div>
+    <div class="tbl-wrap"><table id="tbl-dash-s2"><thead><tr><th>Order date</th><th>Order no.</th><th>Store</th><th>Customer</th><th>SKU</th><th>Supplier</th><th>Days waiting</th></tr></thead><tbody id="ts2"></tbody></table></div>
+  </div>
+</div>
+
+<!-- IMPORT -->
+<div id="view-import" class="view">
+  <div class="tab-bar">
+    <div class="tab active" onclick="stab('at',this)">Orders (Airtable)</div>
+    <div class="tab" onclick="stab('sup',this)">Suppliers</div>
+    <div class="tab" onclick="stab('ewe',this)">EWE courier</div>
+    <div class="tab" onclick="stab('tfm',this)">TFM courier</div>
+    <div class="tab" onclick="stab('cod',this)">COD status</div>
+    <div class="tab" onclick="stab('ret',this)">Returns</div>
+  </div>
+
+  <div id="itab-at" style="padding:14px">
+    <div class="import-box">
+      <h3>Orders data</h3>
+      <p>Upload a CSV/XLS file or paste your Airtable orders export. Columns auto-detected (order date, order no., customer, mobile, SKU, order value, order status, etc). Re-importing updates existing rows by order no. + SKU and preserves any supplier or courier data already matched. If the <strong>order status</strong> column says "Cancelled", the order is marked Cancelled everywhere. Dispatch from office is derived automatically — it's true when order status says dispatched, or when any courier is assigned.</p>
+      <div class="file-drop" onclick="document.getElementById('atf').click()">
+        <span style="display:inline-flex;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6"/><path d="M9.5 14.5L12 12l2.5 2.5"/></svg></span>
+        <p style="font-size:11px;margin-top:4px">Click to upload orders file (CSV / TSV)</p>
+        <p id="atfn" style="font-size:11px;color:var(--text-accent);margin-top:2px"></p>
+      </div>
+      <input type="file" id="atf" accept=".csv,.tsv,.txt,.xlsx,.xls" style="display:none" onchange="loadFile('at-ta','atfn',this)">
+      <textarea id="at-ta" placeholder="— or paste orders data here (tab or comma separated) —"></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <button class="btn primary" onclick="importAT()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Import orders</button>
+        <span style="font-size:11px;color:var(--text-muted)" id="at-ct"></span>
+      </div>
+      <div id="at-res"></div>
+    </div>
+    <div class="logic-row">
+      <strong style="color:var(--text-primary)">Auto-status logic:</strong>
+      <span><span class="badge ba">INSTOCK field = Yes / no supplier</span> → Instock, not dispatched</span>
+      <span><span class="badge bw">Supplier + bill no (dispatch date)</span> → Received in WH</span>
+      <span><span class="badge bd">Supplier assigned, no bill no</span> → Pending supplier</span>
+      <span><span class="badge bn">Sold Out</span> → Stock out</span>
+      <span><span class="badge bd">order status = Cancelled</span> → Cancelled (overrides everything)</span>
+      <span><span class="badge ba">order status = dispatched, or any courier assigned</span> → Dispatch from office</span>
+      <span style="color:var(--text-muted)">Order numbers in "All orders" always come from this Airtable import — courier/COD/return imports only update matching existing orders, never add new ones.</span>
+    </div>
+  </div>
+
+  <div id="itab-sup" style="padding:14px;display:none">
+    <div class="import-box">
+      <h3>Supplier data</h3>
+      <p>Upload a CSV file or paste your supplier export. Matched to existing orders by <strong>order no.</strong> If a <strong>SKU</strong> column is present, each row's status is applied only to that SKU (so a multi-SKU order shows a separate status per item); otherwise the status is applied to the whole order. Updates: supplier, instock, supplier status, supplier dispatch date, received in WH, dispatch from office. Import your orders first so there's something to match against.</p>
+      <div class="file-drop" onclick="document.getElementById('supf').click()">
+        <span style="display:inline-flex;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6"/><path d="M9.5 14.5L12 12l2.5 2.5"/></svg></span>
+        <p style="font-size:11px;margin-top:4px">Click to upload supplier file (CSV / TSV)</p>
+        <p id="supfn" style="font-size:11px;color:var(--text-accent);margin-top:2px"></p>
+      </div>
+      <input type="file" id="supf" accept=".csv,.tsv,.txt,.xlsx,.xls" style="display:none" onchange="loadFile('sup-ta','supfn',this)">
+      <textarea id="sup-ta" placeholder="— or paste supplier data here (tab or comma separated) —"></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <button class="btn primary" onclick="importSupplier()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Import suppliers</button>
+      </div>
+      <div id="sup-res"></div>
+    </div>
+  </div>
+
+  <div id="itab-ewe" style="padding:14px;display:none">
+    <div class="import-box">
+      <h3>EWE (Easyway) courier data</h3>
+      <p>Upload file or paste export from EWE portal. Matched to orders by <strong>Reference Number</strong> = order number. Updates: Courier Status EWE, Tracking ID EWE, Dispatch Date from Office EWE. If a <strong>Replaced</strong> column is present and checked for a row, that order is automatically logged as a return on the same order no.</p>
+      <div class="file-drop" onclick="document.getElementById('ef').click()">
+        <span style="display:inline-flex;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6"/><path d="M9.5 14.5L12 12l2.5 2.5"/></svg></span>
+        <p style="font-size:11px;margin-top:4px">Click to upload EWE file (CSV / TSV)</p>
+        <p id="efn" style="font-size:11px;color:var(--text-accent);margin-top:2px"></p>
+      </div>
+      <input type="file" id="ef" accept=".csv,.tsv,.txt,.xlsx,.xls" style="display:none" onchange="loadFile('ewe-ta','efn',this)">
+      <textarea id="ewe-ta" placeholder="— or paste EWE export here —"></textarea>
+      <div style="margin-top:8px"><button class="btn primary" onclick="importCourier('ewe')"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Import EWE</button></div>
+      <div id="ewe-res"></div>
+    </div>
+  </div>
+
+  <div id="itab-tfm" style="padding:14px;display:none">
+    <div class="import-box">
+      <h3>TFM courier data</h3>
+      <p>Upload file or paste export from TFM portal. Matched by <strong>SHIPPER REF #</strong> = order number. Updates: Courier Status TFM, Tracking ID TFM, Dispatch Date from Office TFM. If a <strong>Replaced</strong> column is present and checked for a row, that order is automatically logged as a return on the same order no.</p>
+      <div class="file-drop" onclick="document.getElementById('tf').click()">
+        <span style="display:inline-flex;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6"/><path d="M9.5 14.5L12 12l2.5 2.5"/></svg></span>
+        <p style="font-size:11px;margin-top:4px">Click to upload TFM file (CSV / TSV)</p>
+        <p id="tfn" style="font-size:11px;color:var(--text-accent);margin-top:2px"></p>
+      </div>
+      <input type="file" id="tf" accept=".csv,.tsv,.txt,.xlsx,.xls" style="display:none" onchange="loadFile('tfm-ta','tfn',this)">
+      <textarea id="tfm-ta" placeholder="— or paste TFM export here —"></textarea>
+      <div style="margin-top:8px"><button class="btn primary" onclick="importCourier('tfm')"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Import TFM</button></div>
+      <div id="tfm-res"></div>
+    </div>
+  </div>
+
+  <div id="itab-cod" style="padding:14px;display:none">
+    <div class="import-box">
+      <h3>COD status</h3>
+      <p>Upload a CSV/XLS file or paste data with columns: <strong>order no</strong>, <strong>amount</strong>, <strong>received</strong>. Matched to existing orders by order no. Sets COD status to "Received" and records the COD amount received when the received column is marked (yes / y / true / 1 / x).</p>
+      <div class="file-drop" onclick="document.getElementById('codf').click()">
+        <span style="display:inline-flex;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6"/><path d="M9.5 14.5L12 12l2.5 2.5"/></svg></span>
+        <p style="font-size:11px;margin-top:4px">Click to upload COD file (CSV / XLS)</p>
+        <p id="codfn" style="font-size:11px;color:var(--text-accent);margin-top:2px"></p>
+      </div>
+      <input type="file" id="codf" accept=".csv,.tsv,.txt,.xlsx,.xls" style="display:none" onchange="loadFile('cod-ta','codfn',this)">
+      <textarea id="cod-ta" placeholder="— or paste COD data here (order no, amount, received) —"></textarea>
+      <div style="margin-top:8px"><button class="btn primary" onclick="importCOD()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Import COD</button></div>
+      <div id="cod-res"></div>
+    </div>
+  </div>
+
+  <div id="itab-ret" style="padding:14px;display:none">
+    <div class="import-box">
+      <h3>Returns</h3>
+      <p>Upload a CSV/XLS file or paste data with columns: <strong>order no</strong>, <strong>received</strong> (whether the return has been received back or not). Matched to existing orders by order no.</p>
+      <div class="file-drop" onclick="document.getElementById('retf').click()">
+        <span style="display:inline-flex;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6"/><path d="M9.5 14.5L12 12l2.5 2.5"/></svg></span>
+        <p style="font-size:11px;margin-top:4px">Click to upload Returns file (CSV / XLS)</p>
+        <p id="retfn" style="font-size:11px;color:var(--text-accent);margin-top:2px"></p>
+      </div>
+      <input type="file" id="retf" accept=".csv,.tsv,.txt,.xlsx,.xls" style="display:none" onchange="loadFile('ret-ta','retfn',this)">
+      <textarea id="ret-ta" placeholder="— or paste return data here (order no, received) —"></textarea>
+      <div style="margin-top:8px"><button class="btn primary" onclick="importReturn()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Import returns</button></div>
+      <div id="ret-res"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ALL ORDERS — full column view -->
+<div id="view-orders" class="view">
+  <div class="section">
+    <div class="fbar">
+      <select id="fo-store" onchange="renderOrders()"><option value="">All stores</option></select>
+      <select id="fo-sup" onchange="renderOrders()"><option value="">All suppliers</option></select>
+      <select id="fo-sup-status" onchange="renderOrders()">
+        <option value="">All supplier statuses</option>
+        <option>Not Dispatched</option><option>Dispatched</option><option>INSTOCK</option><option>STOCK OUT</option>
+      </select>
+      <input id="fo-q" placeholder="Order no / customer / SKU..." oninput="renderOrders()">
+    </div>
+    <div class="tbl-wrap"><table id="tbl-orders">
+      <thead><tr>
+        <th>Order date</th><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>Order value</th><th>No. items</th>
+        <th>SKU</th><th>Supplier</th><th>Instock</th><th>Order status</th><th>Supplier status</th><th>Supplier dispatch date</th>
+        <th>Dispatch from office</th><th>Dispatch date EWE</th><th>Dispatch date TFM</th>
+        <th>Courier</th><th>TFM</th><th>Courier status EWE</th><th>Courier status TFM</th>
+        <th>COD status</th><th>COD amt received</th><th>Return received</th><th>Tracking EWE</th><th>Tracking TFM</th>
+      </tr></thead>
+      <tbody id="to"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- PENDING SUPPLIER -->
+<div id="view-pending" class="view">
+  <div class="section">
+    <div class="sec-head"><h2>Pending supplier</h2><span id="pend-total" style="font-size:12px;color:var(--text-secondary);font-weight:400"></span></div>
+    <div class="fbar">
+      <select id="fp-store" onchange="renderPending()"><option value="">All stores</option></select>
+      <select id="fp-sup" onchange="renderPending()"><option value="">All suppliers</option></select>
+      <input id="fp-q" placeholder="Search order no..." oninput="renderPending()">
+    </div>
+    <div class="tbl-wrap"><table id="tbl-pending">
+      <thead><tr><th>Order date</th><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>SKU</th><th>Supplier</th><th>Supplier status</th><th>Days waiting</th><th>Comment</th></tr></thead>
+      <tbody id="tpend"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- IN WAREHOUSE -->
+<div id="view-wh" class="view">
+  <div class="section">
+    <div class="sec-head"><h2>Order — not dispatched from office for 7+ days</h2></div>
+    <div class="fbar">
+      <select id="fwh-store" onchange="renderWH()"><option value="">All stores</option></select>
+      <select id="fwh-sup" onchange="renderWH()"><option value="">All suppliers</option></select>
+      <input id="fwh-q" placeholder="Order no / customer / SKU..." oninput="renderWH()">
+    </div>
+    <div class="tbl-wrap"><table id="tbl-wh">
+      <thead><tr><th>Order date</th><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>SKU</th><th>Supplier</th><th>Supplier status</th><th>Supplier dispatch date</th><th>Order value</th><th>Days pending</th></tr></thead>
+      <tbody id="twh"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- INSTOCK QUEUE -->
+<div id="view-instock" class="view">
+  <div class="section">
+    <div class="sec-head"><h2>Instock orders — not yet dispatched to customer</h2></div>
+    <div class="fbar">
+      <select id="fins-store" onchange="renderInstock()"><option value="">All stores</option></select>
+      <input id="fins-q" placeholder="Order no / customer / SKU..." oninput="renderInstock()">
+    </div>
+    <div class="tbl-wrap"><table id="tbl-instock">
+      <thead><tr><th>Order date</th><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>SKU</th><th>Order value</th></tr></thead>
+      <tbody id="tins"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- STOCK OUT -->
+<div id="view-stockout" class="view">
+  <div class="section">
+    <div class="sec-head"><h2>Stock out / sold out items</h2></div>
+    <p style="padding:8px 14px;font-size:11px;color:var(--text-secondary)">Items marked "Stock out" or "Sold out" on the supplier bill. These are auto-marked Received in WH = Yes.</p>
+    <div class="fbar">
+      <select id="fso-store" onchange="renderStockOut()"><option value="">All stores</option></select>
+      <input id="fso-q" placeholder="Order no / customer / SKU..." oninput="renderStockOut()">
+    </div>
+    <div class="tbl-wrap"><table id="tbl-stockout">
+      <thead><tr><th>Order date</th><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>SKU</th><th>Supplier</th><th>Bill / note</th></tr></thead>
+      <tbody id="tso"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- COURIER STATUS — EWE -->
+<div id="view-courier-ewe" class="view">
+  <div class="section">
+    <div class="fbar">
+      <select id="fcewe-store" onchange="renderCourierEWE()"><option value="">All stores</option></select>
+      <select id="fcewe-status" onchange="renderCourierEWE()">
+        <option value="">All statuses</option>
+      </select>
+      <input id="fcewe-q" placeholder="Order no / customer / tracking..." oninput="renderCourierEWE()">
+    </div>
+    <div class="tbl-wrap"><table id="tbl-courier-ewe">
+      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>Dispatch date</th><th>Courier status</th><th>Tracking ID</th><th>COD status</th><th>COD amt received</th><th>Replaced / Return</th></tr></thead>
+      <tbody id="tcour-ewe"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- COURIER STATUS — TFM -->
+<div id="view-courier-tfm" class="view">
+  <div class="section">
+    <div class="fbar">
+      <select id="fctfm-store" onchange="renderCourierTFM()"><option value="">All stores</option></select>
+      <select id="fctfm-status" onchange="renderCourierTFM()">
+        <option value="">All statuses</option>
+      </select>
+      <input id="fctfm-q" placeholder="Order no / customer / tracking..." oninput="renderCourierTFM()">
+    </div>
+    <div class="tbl-wrap"><table id="tbl-courier-tfm">
+      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>Dispatch date</th><th>Courier status</th><th>Tracking ID</th><th>Last comment</th><th>COD status</th><th>COD amt received</th><th>Replaced / Return</th></tr></thead>
+      <tbody id="tcour-tfm"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- REPORTS -->
+<div id="view-reports" class="view">
+  <div class="fbar" style="border-radius:10px;border:0.5px solid var(--border);margin-bottom:14px">
+    <select id="frep-store" onchange="renderReports()"><option value="">All stores</option></select>
+    <input id="frep-q" placeholder="Order no / customer / SKU..." oninput="renderReports()">
+  </div>
+  <div class="section">
+    <div class="sec-head"><h2>Replacement / return — pending back to warehouse</h2><span class="badge bd" id="r-rr-c">0</span></div>
+    <p style="padding:8px 14px;font-size:11px;color:var(--text-secondary)">Orders flagged as Replaced by the courier where the physical return hasn't been marked Received yet. Click a row for full details.</p>
+    <div class="tbl-wrap"><table id="tbl-rep-rr">
+      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>Supplier</th><th>Courier</th><th>Return status</th></tr></thead>
+      <tbody id="r-rr"></tbody>
+    </table></div>
+  </div>
+
+  <div class="section" id="sec-rep-codewe">
+    <div class="sec-head"><h2>Delivered — COD not received (Easyway)</h2><span class="badge bd" id="r-codewe-c">0</span></div>
+    <p style="padding:8px 14px;font-size:11px;color:var(--text-secondary)">Delivered via EWE with no "Received" record in the COD panel. Click a row for full details. Drops off this list automatically once COD is marked received.</p>
+    <div class="tbl-wrap"><table id="tbl-rep-codewe">
+      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>Barcode</th><th>COD amount</th><th>COD status</th></tr></thead>
+      <tbody id="r-codewe"></tbody>
+    </table></div>
+  </div>
+
+  <div class="section" id="sec-rep-codtfm">
+    <div class="sec-head"><h2>Delivered — COD not received (TFM)</h2><span class="badge bd" id="r-codtfm-c">0</span></div>
+    <p style="padding:8px 14px;font-size:11px;color:var(--text-secondary)">Delivered via TFM with no "Received" record in the COD panel. Click a row for full details. Drops off this list automatically once COD is marked received.</p>
+    <div class="tbl-wrap"><table id="tbl-rep-codtfm">
+      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>AWB</th><th>COD amount</th><th>COD status</th></tr></thead>
+      <tbody id="r-codtfm"></tbody>
+    </table></div>
+  </div>
+
+  <div class="section" id="sec-rep-holdewe">
+    <div class="sec-head"><h2>On hold with Easyway <span style="font-weight:400;color:var(--text-muted)">(neither delivered nor returned)</span></h2><span class="badge bw" id="r-holdewe-c">0</span></div>
+    <div class="tbl-wrap"><table id="tbl-rep-holdewe">
+      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>Barcode</th><th>Courier status</th><th>Order value</th></tr></thead>
+      <tbody id="r-holdewe"></tbody>
+    </table></div>
+  </div>
+
+  <div class="section" id="sec-rep-holdtfm">
+    <div class="sec-head"><h2>On hold with TFM <span style="font-weight:400;color:var(--text-muted)">(neither delivered nor returned)</span></h2><span class="badge bw" id="r-holdtfm-c">0</span></div>
+    <div class="tbl-wrap"><table id="tbl-rep-holdtfm">
+      <thead><tr><th>Order no.</th><th>Store</th><th>Customer</th><th>Mobile</th><th>AWB</th><th>Courier status</th><th>Order value</th><th>Last comment</th></tr></thead>
+      <tbody id="r-holdtfm"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ORDER STATUS SEARCH -->
+<div id="view-orderstatus" class="view">
+  <div class="section">
+    <div class="fbar">
+      <input id="os-q" placeholder="Order number, mobile number, or customer name..." oninput="renderOrderStatus()" style="min-width:280px">
+    </div>
+    <div id="os-body" style="padding:14px"></div>
+  </div>
+</div>
+
+</div>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div id="loading-overlay" style="position:fixed;inset:0;background:var(--surface-2);display:flex;align-items:center;justify-content:center;z-index:998;font-size:13px;color:var(--text-secondary)">Loading shared data…</div>
+
+<script>
+let db=[];
+let dataReady=false;
+
+// ============================================================
+// FIREBASE SETUP — paste your own project's config below.
+// Get this from: Firebase Console → Project settings → General
+// → "Your apps" → the web app (</>) icon → SDK setup and config.
+// ============================================================
+const firebaseConfig={
+  apiKey:"AIzaSyDJ32TaQ7ufHh7eEjjbv0uAAdoo-563E64",
+  authDomain:"order-management-a0562.firebaseapp.com",
+  projectId:"order-management-a0562",
+  storageBucket:"order-management-a0562.firebasestorage.app",
+  messagingSenderId:"850233803801",
+  appId:"1:850233803801:web:001ca1911a0ff5cc68d688"
+};
+firebase.initializeApp(firebaseConfig);
+const fsDB=firebase.firestore();
+const ORDERS_DOC=fsDB.collection('orderflow').doc('orders');
+let applyingRemoteUpdate=false;
+
+const TITLES={dash:'Dashboard',import:'Import data',orders:'All orders',pending:'Pending supplier',wh:'Not dispatched 7+ days',instock:'Instock queue',stockout:'Stock out','courier-ewe':'Courier — EWE','courier-tfm':'Courier — TFM',reports:'Reports',orderstatus:'Order status'};
+
+let monthFilter='';
+function orderMonthKey(dateStr){
+  if(!dateStr)return'';
+  const d=new Date(dateStr);
+  if(isNaN(d))return'';
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+function monthLabel(m){
+  const parts=m.split('-');const names=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return names[parseInt(parts[1],10)-1]+' '+parts[0];
+}
+function inSelectedMonth(o){
+  if(!monthFilter)return true;
+  return orderMonthKey(o.orderDate)===monthFilter;
+}
+function fillMonthFilter(){
+  const months=uniq(db.map(o=>orderMonthKey(o.orderDate)).filter(Boolean)).sort().reverse();
+  const el=document.getElementById('month-filter');
+  if(!el)return;
+  el.innerHTML='<option value="">All months</option>'+months.map(m=>`<option value="${m}"${m===monthFilter?' selected':''}>${monthLabel(m)}</option>`).join('');
+}
+function setMonthFilter(v){
+  monthFilter=v;
+  renderAll();
+}
+function isCancelled(o){
+  return(o.orderStatus||'').toLowerCase().includes('cancel');
+}
+
+async function loadData(){
+  try{
+    const snap=await ORDERS_DOC.get();
+    db = snap.exists && snap.data().value ? JSON.parse(snap.data().value) : [];
+  }catch(e){
+    console.error('Load error:',e);
+    db=[];
+    toast('Could not load shared data — check your Firebase config',false);
+  }
+  loadColPrefs();
+  dataReady=true;
+  document.getElementById('loading-overlay').style.display='none';
+  renderAll();
+  initResizables();
+  initTopScrollbars();
+  initColumnControls();
+  resetScroll();
+  toast('Shared data loaded — visible to everyone using this board');
+
+  // Live sync: pick up changes made by other people without needing a refresh.
+  ORDERS_DOC.onSnapshot(snap=>{
+    if(applyingRemoteUpdate)return; // ignore the echo of our own writes
+    if(!snap.exists)return;
+    try{
+      db=snap.data().value?JSON.parse(snap.data().value):[];
+      renderAll();
+      initColumnControls();
+    }catch(e){console.error('Live sync error:',e);}
+  });
+}
+
+function save(){
+  renderAll();
+  persistData();
+}
+
+async function persistData(){
+  try{
+    applyingRemoteUpdate=true;
+    await ORDERS_DOC.set({value:JSON.stringify(db),updatedAt:Date.now()});
+  }catch(e){
+    console.error('Storage error:',e);
+    toast('Could not save — your change may not be visible to others yet',false);
+  }finally{
+    setTimeout(()=>{applyingRemoteUpdate=false;},800);
+  }
+}
+
+function toast(msg,ok=true){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.style.background=ok?'var(--bg-success)':'var(--bg-warning)';
+  t.style.color=ok?'var(--text-success)':'var(--text-warning)';
+  t.style.borderColor=ok?'var(--border-success)':'var(--border-warning)';
+  t.style.display='block';
+  setTimeout(()=>t.style.display='none',3000);
+}
+
+function nav(name,el){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  if(el)el.classList.add('active');
+  document.getElementById('ptitle').textContent=TITLES[name]||name;
+  renderAll();
+  initResizables();
+  initTopScrollbars();
+  initColumnControls();
+  resetScroll();
+}
+
+function goTo(name){
+  const el=document.querySelector('.nav-item[data-nav="'+name+'"]');
+  nav(name,el);
+}
+
+function goToDashSection(sectionId){
+  goTo('dash');
+  setTimeout(()=>{
+    const el=document.getElementById(sectionId);
+    if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+  },60);
+}
+
+function goToReportSection(sectionId){
+  goTo('reports');
+  setTimeout(()=>{
+    const el=document.getElementById(sectionId);
+    if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+  },60);
+}
+
+function makeResizable(table){
+  if(!table||table.dataset.resizable)return;
+  const ths=[...table.querySelectorAll('thead th')];
+  if(!ths.length)return;
+  const widths=ths.map(th=>th.getBoundingClientRect().width);
+  if(!widths.some(w=>w>0))return; // table not visible yet, try again later
+  table.style.tableLayout='fixed';
+  ths.forEach((th,i)=>{
+    th.style.width=widths[i]+'px';
+  });
+  table.dataset.resizable='1';
+  ths.forEach((th,i)=>{
+    if(i===ths.length-1)return; // no handle on the last column
+    const rez=document.createElement('span');
+    rez.className='col-resizer';
+    rez.draggable=false;
+    th.appendChild(rez);
+    rez.addEventListener('mousedown',function(e){
+      e.preventDefault();e.stopPropagation();
+      rez.classList.add('active');
+      const startX=e.pageX,startW=th.getBoundingClientRect().width;
+      function mv(ev){ th.style.width=Math.max(40,startW+(ev.pageX-startX))+'px'; syncTopScroll(table); }
+      function up(){
+        document.removeEventListener('mousemove',mv);
+        document.removeEventListener('mouseup',up);
+        rez.classList.remove('active');
+        syncTopScroll(table);
+      }
+      document.addEventListener('mousemove',mv);
+      document.addEventListener('mouseup',up);
+    });
+  });
+}
+
+// ---- Draggable / deletable table columns -------------------------------
+// Column order & visibility is a personal display preference, so it's saved
+// under shared:false (only affects the current user's own view of the board).
+let colPrefs={};
+
+function loadColPrefs(){
+  try{
+    const raw=localStorage.getItem('orderflow_colPrefs');
+    colPrefs=raw?JSON.parse(raw):{};
+  }catch(e){
+    colPrefs={};
+  }
+}
+function saveColPrefs(){
+  try{
+    localStorage.setItem('orderflow_colPrefs',JSON.stringify(colPrefs));
+  }catch(e){
+    console.error('Could not save column preferences:',e);
+  }
+}
+function getColOrder(key,n){
+  const p=colPrefs[key];
+  return(p&&Array.isArray(p.order)&&p.order.length===n)?p.order.slice():Array.from({length:n},(_,i)=>i);
+}
+function getColHidden(key){
+  const p=colPrefs[key];
+  return new Set(p&&Array.isArray(p.hidden)?p.hidden:[]);
+}
+
+function initColumnControls(){
+  document.querySelectorAll('table[id]').forEach(table=>{
+    if(table.dataset.colInit)return;
+    const theadRow=table.querySelector('thead tr');
+    if(!theadRow||theadRow.children.length<2)return;
+    table.dataset.colInit='1';
+    const key=table.id;
+    Array.from(theadRow.children).forEach((th,i)=>{
+      th.dataset.origIndex=i;
+      th.draggable=true;
+      const del=document.createElement('span');
+      del.className='col-del';
+      del.textContent='×';
+      del.title='Remove this column from view';
+      del.draggable=false;
+      del.onclick=e=>{e.stopPropagation();hideColumn(key,i);};
+      th.appendChild(del);
+      th.addEventListener('dragstart',e=>{
+        th.classList.add('col-dragging');
+        e.dataTransfer.effectAllowed='move';
+        e.dataTransfer.setData('text/plain',String(i));
+      });
+      th.addEventListener('dragend',()=>{
+        th.classList.remove('col-dragging');
+        theadRow.querySelectorAll('.col-dragover').forEach(x=>x.classList.remove('col-dragover'));
+      });
+      th.addEventListener('dragover',e=>{e.preventDefault();th.classList.add('col-dragover');});
+      th.addEventListener('dragleave',()=>th.classList.remove('col-dragover'));
+      th.addEventListener('drop',e=>{
+        e.preventDefault();
+        th.classList.remove('col-dragover');
+        const fromOrig=+e.dataTransfer.getData('text/plain');
+        const toOrig=+th.dataset.origIndex;
+        reorderColumn(key,fromOrig,toOrig);
+      });
+    });
+    applyColumnPrefs(table);
+    const tbody=table.querySelector('tbody');
+    if(tbody){
+      new MutationObserver(()=>{
+        if(table.dataset.applyingCols)return;
+        applyColumnPrefs(table);
+      }).observe(tbody,{childList:true});
+    }
+  });
+}
+
+function reorderColumn(key,fromOrig,toOrig){
+  const table=document.getElementById(key);
+  if(!table||fromOrig===toOrig)return;
+  const n=table.querySelector('thead tr').children.length;
+  const order=getColOrder(key,n);
+  const fromPos=order.indexOf(fromOrig),toPos=order.indexOf(toOrig);
+  if(fromPos<0||toPos<0)return;
+  order.splice(toPos,0,order.splice(fromPos,1)[0]);
+  colPrefs[key]={...(colPrefs[key]||{}),order};
+  saveColPrefs();
+  applyColumnPrefs(table);
+}
+function hideColumn(key,origIndex){
+  const table=document.getElementById(key);
+  if(!table)return;
+  const n=table.querySelector('thead tr').children.length;
+  if(n-getColHidden(key).size<=1)return; // keep at least one column visible
+  const hidden=Array.from(getColHidden(key));
+  if(!hidden.includes(origIndex))hidden.push(origIndex);
+  colPrefs[key]={...(colPrefs[key]||{}),hidden};
+  saveColPrefs();
+  applyColumnPrefs(table);
+}
+function resetColumns(tableId){
+  delete colPrefs[tableId];
+  saveColPrefs();
+  const table=document.getElementById(tableId);
+  if(table)applyColumnPrefs(table);
+}
+
+function applyColumnPrefs(table){
+  const theadRow=table.querySelector('thead tr');
+  if(!theadRow)return;
+  const n=theadRow.children.length;
+  const key=table.id;
+  const order=getColOrder(key,n);
+  const hidden=getColHidden(key);
+  table.dataset.applyingCols='1';
+  order.forEach(origIdx=>{
+    const th=Array.from(theadRow.children).find(el=>+el.dataset.origIndex===origIdx);
+    if(th)theadRow.appendChild(th);
+  });
+  Array.from(theadRow.children).forEach(th=>{
+    th.style.display=hidden.has(+th.dataset.origIndex)?'none':'';
+  });
+  const visibleCount=n-hidden.size;
+  table.querySelectorAll('tbody tr').forEach(row=>{
+    const cells=Array.from(row.children);
+    if(cells.length===n){
+      cells.forEach((cell,idx)=>{if(cell.dataset.ci===undefined)cell.dataset.ci=idx;});
+      order.forEach(origIdx=>{
+        const cell=cells.find(c=>+c.dataset.ci===origIdx);
+        if(cell)row.appendChild(cell);
+      });
+      cells.forEach(cell=>{cell.style.display=hidden.has(+cell.dataset.ci)?'none':'';});
+    } else {
+      cells.forEach(cell=>{
+        if(cell.hasAttribute('colspan')){
+          const others=cells.length-1;
+          cell.setAttribute('colspan',Math.max(1,visibleCount-others));
+        }
+      });
+    }
+  });
+  requestAnimationFrame(()=>{delete table.dataset.applyingCols;});
+}
+
+function initResizables(){
+  document.querySelectorAll('.view.active table').forEach(makeResizable);
+}
+
+function setupTopScroll(wrap){
+  const table=wrap.querySelector('table');
+  if(!table)return;
+  if(wrap.dataset.topScroll){ syncTopScroll(table); return; }
+  const top=document.createElement('div');
+  top.className='tbl-scroll-top';
+  const spacer=document.createElement('div');
+  spacer.style.width=table.scrollWidth+'px';
+  top.appendChild(spacer);
+  wrap.parentNode.insertBefore(top,wrap);
+  let syncing=false;
+  top.addEventListener('scroll',()=>{ if(syncing)return; syncing=true; wrap.scrollLeft=top.scrollLeft; syncing=false; });
+  wrap.addEventListener('scroll',()=>{ if(syncing)return; syncing=true; top.scrollLeft=wrap.scrollLeft; syncing=false; });
+  wrap.dataset.topScroll='1';
+}
+
+function syncTopScroll(table){
+  const wrap=table.closest('.tbl-wrap');
+  if(!wrap)return;
+  const top=wrap.previousElementSibling;
+  if(top&&top.classList.contains('tbl-scroll-top')){
+    top.firstElementChild.style.width=table.scrollWidth+'px';
+  }
+}
+
+function initTopScrollbars(){
+  document.querySelectorAll('.view.active .tbl-wrap').forEach(setupTopScroll);
+}
+
+function resetScroll(){
+  document.querySelectorAll('.view.active .tbl-wrap, .view.active .tbl-scroll-top').forEach(w=>{w.scrollLeft=0});
+}
+
+function stab(t,el){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  el.classList.add('active');
+  ['at','sup','ewe','tfm','cod','ret'].forEach(x=>document.getElementById('itab-'+x).style.display=x===t?'block':'none');
+}
+
+function storeFrom(n){
+  if(!n)return'';
+  for(const p of['BFAB','BFEU','BCLR','BBS','BDL','BSD','BUS','QF','TS'])if(n.startsWith(p))return p;
+  return n.replace(/\d+$/,'');
+}
+
+function norm(h){
+  const s=h.toLowerCase().replace(/[^a-z0-9]/g,'');
+  if(s.includes('note'))return'';
+  if(s.includes('orderstatus'))return'orderStatus';
+  if(s.includes('replaced')||s.includes('replacement'))return'replaced';
+  if(s.includes('lastcomment'))return'tfmLastComment';
+  if(s==='date'||s.includes('orderdate')||s==='orderdat')return'orderDate';
+  if((s.includes('orderno')||s.includes('ordernumber'))&&!s.includes('note'))return'orderNo';
+  if(s.includes('customername')||s==='customer'||s.includes('consignee'))return'customer';
+  if(s.includes('mobilenumber')||s==='mobile'||s==='contact')return'mobile';
+  if(s.includes('telephone')||s.includes('contactno')||s.includes('contactnumber'))return'mobile2';
+  if(s.includes('selectstore')||s==='store')return'store';
+  if(s==='city'||s.includes('deliverycity')||s.includes('customercity')||s.includes('consigneecity')||s.includes('shippingcity')||s.includes('emirate'))return'city';
+  if(s.includes('totalordervalue')||s.includes('ordervalue')||s==='totalprice')return'orderValue';
+  if(s.includes('noofitem')||s.includes('numberofitem')||s==='noofitems'||s.includes('quantity')||s==='qty'||s==='qua')return'noItems';
+  if(s==='sku')return'sku';
+  if(s==='supplier')return'supplier';
+  if(s==='instock'||s==='instockfield')return'instock';
+  if(s.includes('supplierstatus'))return'supplierStatus';
+  if(s.includes('supplierdateofdispatch')||s.includes('dateofdispatch')||s.includes('billno')||s==='bill_no'||s==='billno')return'supplierDispatchDate';
+  if(s.includes('receivedinwh')||s.includes('received_in_wh'))return'receivedInWH';
+  if(s.includes('soldout'))return'soldOut';
+  if(s.includes('dispatchfromoffice')||s.includes('dispatchfronoffice'))return'dispatchFromOffice';
+  if(s.includes('dispatchdatefronoffice')||s.includes('dispatchdatefromoffice'))return'dispatchDateEWE';
+  if(s.includes('courierstatus')&&s.includes('ewe'))return'courierStatusEWE';
+  if(s.includes('courierstatus')&&s.includes('tfm'))return'courierStatusTFM';
+  if(s.includes('courierstatus'))return'courierStatusEWE';
+  if(s.includes('trackingid')&&s.includes('ewe'))return'trackingEWE';
+  if(s.includes('trackingid')&&s.includes('tfm'))return'trackingTFM';
+  if(s==='awb'||s.includes('awbnumber')||s.includes('awbno')||s.includes('airwaybill'))return'trackingTFM';
+  if(s.includes('barcode')||s.includes('barecode'))return'trackingEWE';
+  if(s.includes('codstatus'))return'codStatus';
+  if(s.includes('courier')&&!s.includes('status')&&!s.includes('track'))return'courier';
+  if(s==='tfm')return'tfmCourier';
+  return s;
+}
+
+function splitDelim(line,sep){
+  const out=[];let cur='';let inQ=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(inQ){
+      if(ch==='"'){ if(line[i+1]==='"'){cur+='"';i++;} else{inQ=false;} }
+      else{cur+=ch;}
+    } else {
+      if(ch==='"'){inQ=true;}
+      else if(ch===sep){out.push(cur.trim());cur='';}
+      else{cur+=ch;}
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+function parseTSV(text){
+  const lines=text.replace(/\r/g,'').split('\n').filter(l=>l.trim());
+  if(lines.length<2)return[];
+  const sep=lines[0].includes('\t')?'\t':',';
+  const headers=splitDelim(lines[0],sep).map(norm);
+  return lines.slice(1).map(l=>{
+    const vals=splitDelim(l,sep);
+    const o={};
+    headers.forEach((m,i)=>{
+      if(m&&vals[i]!==undefined&&vals[i]!==''){
+        // mobile2 is a secondary mobile col — only use it if mobile not already set
+        if(m==='mobile2'){
+          if(!o['mobile'])o['mobile']=vals[i];
+          return;
+        }
+        // For all other fields: first occurrence wins (no concatenation)
+        if(!o[m])o[m]=vals[i];
+      }
+    });
+    Object.defineProperty(o,'_raw',{value:vals,enumerable:false});
+    return o;
+  });
+}
+
+function deriveSupStatus(r){
+  if((r.orderStatus||'').toLowerCase().includes('cancel'))return'Cancelled';
+  const dispatchNote=(r.supplierDispatchDate||'').toLowerCase();
+  const isStockOutText=v=>/sold|stock ?out/.test(v);
+  // The bill_no / supplier-dispatch-date field is the authoritative signal for this:
+  // it's either the words "stock out"/"sold out", or an actual bill date — never both.
+  // So if there's a real value there and it isn't a stock-out marker, it's genuinely dispatched,
+  // regardless of what any other (possibly stale) status field says.
+  if(dispatchNote){
+    if(isStockOutText(dispatchNote))return'STOCK OUT';
+    return'Dispatched';
+  }
+  const whNote=(r.receivedInWH||'').toLowerCase();
+  if((r.soldOut||'').toLowerCase().includes('yes')||isStockOutText(whNote))return'STOCK OUT';
+  const insVal=(r.instock||'').toLowerCase();
+  const ins=insVal==='yes'||insVal.includes('full')||(!r.supplier&&whNote==='yes');
+  if(ins)return'INSTOCK';
+  if(r.supplierStatus)return r.supplierStatus;
+  if(r.supplier)return'Not Dispatched';
+  return'';
+}
+
+function isTruthy(v){
+  return /^(y|yes|true|1|received|done|x|checked|✓|paid)$/i.test((v||'').toString().trim());
+}
+
+function hashColor(str){
+  let hash=0;
+  for(let i=0;i<str.length;i++){hash=str.charCodeAt(i)+((hash<<5)-hash);}
+  return Math.abs(hash)%360;
+}
+function colorBadge(text){
+  if(!text||text==='-')return'<span class="badge bn">—</span>';
+  const hue=hashColor(String(text));
+  return `<span class="cbadge" style="background:hsl(${hue},65%,93%);color:hsl(${hue},60%,30%);border:0.5px solid hsl(${hue},50%,78%)">${text}</span>`;
+}
+
+function isDispatchedFromOffice(o){
+  if((o.orderStatus||'').toLowerCase().includes('dispatch'))return true;
+  if(o.courier||o.tfmCourier)return true;
+  if(o.courierStatusEWE||o.courierStatusTFM)return true;
+  if(o.dispatchDateEWE||o.dispatchDateTFM)return true;
+  if((o.dispatchFromOffice||'').toLowerCase()==='yes')return true;
+  return false;
+}
+function isDelivered(o){
+  return/deliver/i.test(o.courierStatusEWE||'')||/deliver/i.test(o.courierStatusTFM||'');
+}
+function isDeliveredEWE(o){return/deliver/i.test(o.courierStatusEWE||'')}
+function isDeliveredTFM(o){return/deliver/i.test(o.courierStatusTFM||'')}
+function isReturned(o){
+  if(o.returnReceived)return true; // any return record at all (Received or Not Received) means it's in the return list
+  return o.replaced==='Yes'||/return|rto/i.test(o.courierStatusEWE||'')||/return|rto/i.test(o.courierStatusTFM||'');
+}
+
+function importAT(){
+  const text=document.getElementById('at-ta').value.trim();
+  if(!text){toast('Nothing pasted',false);return}
+  const rows=parseTSV(text);
+  if(!rows.length){toast('Could not parse — check headers are included',false);return}
+  let added=0,updated=0;
+  rows.forEach(r=>{
+    if(!r.orderNo&&!r.sku)return;
+    const supStatus=deriveSupStatus(r);
+    const rec={
+      orderDate:r.orderDate||'',
+      orderNo:r.orderNo||'',
+      store:(r.store||'').trim(),
+      customer:r.customer||'',
+      mobile:r.mobile||r.mobile2||'',
+      city:r.city||'',
+      orderValue:r.orderValue||'',
+      noItems:r.noItems||'',
+      sku:r.sku||'',
+      supplier:r.supplier||'',
+      instock:r.instock||'',
+      orderStatus:r.orderStatus||'',
+      supplierStatus:supStatus,
+      supplierDispatchDate:r.supplierDispatchDate||'',
+      receivedInWH:supStatus==='STOCK OUT'?'Yes':(r.receivedInWH||''),
+      dispatchFromOffice:r.dispatchFromOffice||'',
+      dispatchDateEWE:r.dispatchDateEWE||'',
+      dispatchDateTFM:r.dispatchDateTFM||'',
+      courier:r.courier||'',
+      tfmCourier:r.tfmCourier||'',
+      courierStatusEWE:r.courierStatusEWE||'',
+      courierStatusTFM:r.courierStatusTFM||'',
+      codStatus:r.codStatus||'',
+      codAmountReceived:'',
+      returnReceived:'',
+      replaced:'',
+      trackingEWE:r.trackingEWE||'',
+      trackingTFM:r.trackingTFM||'',
+      skuDetails:{}
+    };
+    // Key by orderNo+sku so each SKU line is a separate record
+    const idx=db.findIndex(x=>x.orderNo===rec.orderNo&&x.sku===rec.sku);
+    if(idx>=0){
+      const ex=db[idx];
+      db[idx]={...rec,
+        city:rec.city||ex.city,
+        courierStatusEWE:rec.courierStatusEWE||ex.courierStatusEWE,
+        courierStatusTFM:rec.courierStatusTFM||ex.courierStatusTFM,
+        trackingEWE:rec.trackingEWE||ex.trackingEWE,
+        trackingTFM:rec.trackingTFM||ex.trackingTFM,
+        dispatchDateEWE:rec.dispatchDateEWE||ex.dispatchDateEWE,
+        dispatchDateTFM:rec.dispatchDateTFM||ex.dispatchDateTFM,
+        dispatchFromOffice:rec.dispatchFromOffice||ex.dispatchFromOffice,
+        courier:rec.courier||ex.courier,
+        codAmountReceived:ex.codAmountReceived||'',
+        returnReceived:ex.returnReceived||'',
+        replaced:ex.replaced||'',
+        lastComment:rec.lastComment||ex.lastComment||'',
+        skuDetails:ex.skuDetails||{},
+        supplierStatus:rec.supplierStatus==='Cancelled'?'Cancelled':(rec.supplierStatus||ex.supplierStatus)};
+      updated++;
+    } else {db.push(rec);added++;}
+  });
+  save();
+  const msg=`${added} new + ${updated} updated (${rows.length} rows)`;
+  document.getElementById('at-res').innerHTML=`<div class="result-box rok">${msg}</div>`;
+  document.getElementById('at-ct').textContent=`${db.length} total SKUs`;
+  toast('Airtable imported: '+msg);
+}
+
+function importSupplier(){
+  const text=document.getElementById('sup-ta').value.trim();
+  if(!text){toast('Nothing to import',false);return}
+  const rows=parseTSV(text);
+  if(!rows.length){toast('Could not parse — check headers are included',false);return}
+  let matched=0;const miss=[];
+  const touchedOrders=new Set();
+  rows.forEach(r=>{
+    const ref=(r.orderNo||'').trim();
+    if(!ref){return}
+    const supStatus=deriveSupStatus(r);
+    let found=false;
+    db=db.map(o=>{
+      if(o.orderNo!==ref)return o;
+      found=true;
+      if(r.sku){
+        // Supplier sheet already gives this row's own SKU — store the
+        // status against that specific SKU only, instead of overwriting
+        // every item on the order with one status. The order-level fields
+        // get recomputed from ALL per-SKU details after the import finishes
+        // (see recomputeOrderAggregate), so a partial-dispatch doesn't get
+        // masked by a sibling SKU's status.
+        touchedOrders.add(ref);
+        const code=skuCode(r.sku);
+        const existing=o.skuDetails||{};
+        const prev=existing[code]||{};
+        const skuDetails={...existing,[code]:{
+          supplier:r.supplier||prev.supplier||'',
+          instock:r.instock||prev.instock||'',
+          supplierStatus:supStatus||prev.supplierStatus||'',
+          supplierDispatchDate:r.supplierDispatchDate||prev.supplierDispatchDate||'',
+          receivedInWH:supStatus==='STOCK OUT'?'Yes':(r.receivedInWH||prev.receivedInWH||'')
+        }};
+        return{...o,skuDetails,
+          supplier:r.supplier||o.supplier,
+          dispatchFromOffice:r.dispatchFromOffice||o.dispatchFromOffice};
+      }
+      // No SKU column on the supplier sheet — fall back to applying this
+      // status to the whole order, as before.
+      return{...o,
+        supplier:r.supplier||o.supplier,
+        instock:r.instock||o.instock,
+        supplierStatus:supStatus||o.supplierStatus,
+        supplierDispatchDate:r.supplierDispatchDate||o.supplierDispatchDate,
+        receivedInWH:supStatus==='STOCK OUT'?'Yes':(r.receivedInWH||o.receivedInWH),
+        dispatchFromOffice:r.dispatchFromOffice||o.dispatchFromOffice};
+    });
+    if(found)matched++;else miss.push(ref);
+  });
+  if(touchedOrders.size){
+    db=db.map(o=>touchedOrders.has(o.orderNo)?recomputeOrderAggregate(o):o);
+  }
+  save();
+  const msg=`Matched ${matched} order row(s) to supplier data.${miss.length?' Not found (import orders first?): '+miss.slice(0,6).join(', ')+(miss.length>6?'…':''):''}`;
+  document.getElementById('sup-res').innerHTML=`<div class="result-box ${miss.length?'rwarn':'rok'}">${msg}</div>`;
+  toast('Suppliers imported: '+msg,!miss.length);
+}
+
+function loadFile(taId,labelId,inp){
+  const f=inp.files[0];if(!f)return;
+  document.getElementById(labelId).textContent=f.name;
+  const isExcel=/\.xlsx?$/i.test(f.name);
+  const r=new FileReader();
+  if(isExcel){
+    r.onload=e=>{
+      try{
+        const wb=XLSX.read(e.target.result,{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        document.getElementById(taId).value=XLSX.utils.sheet_to_csv(ws);
+      }catch(err){
+        console.error('XLS parse error:',err);
+        toast('Could not read that Excel file — try re-saving as CSV',false);
+      }
+    };
+    r.readAsArrayBuffer(f);
+  } else {
+    r.onload=e=>document.getElementById(taId).value=e.target.result;
+    r.readAsText(f);
+  }
+}
+
+function findVal(r,subs){
+  for(const s of subs){ if(r[s])return r[s]; }
+  for(const k of Object.keys(r)){
+    const kl=k.toLowerCase();
+    if(subs.some(s=>kl.includes(s)))return r[k];
+  }
+  return'';
+}
+
+function importCourier(type){
+  const text=document.getElementById(type+'-ta').value.trim();
+  if(!text){toast('Nothing to import',false);return}
+  const rows=parseTSV(text);
+  let matched=0;const miss=[];
+  let replacedCount=0;
+  rows.forEach(r=>{
+    let ref='',status='',tracking='',date='';
+    if(type==='ewe'){
+      ref=findVal(r,['referencenumber','reference']);
+      status=findVal(r,['statusname','status']);
+      tracking=findVal(r,['barcode'])||(r._raw&&r._raw[0]?r._raw[0].trim():'');
+      date=findVal(r,['servicedate','createddate','modifieddate','date']);
+    } else {
+      ref=findVal(r,['shipperref','shipper']);
+      status=findVal(r,['status']);
+      tracking=findVal(r,['awb']);
+      date=findVal(r,['latestofddate','firstofddate','created','date']);
+    }
+    const replacedRaw=findVal(r,['replaced','replacement']);
+    const isReplaced=isTruthy(replacedRaw);
+    const lastComment=type==='tfm'?(r.tfmLastComment||findVal(r,['lastcomment'])||''):'';
+    ref=(ref||'').trim();
+    if(!ref)return;
+    let found=false;
+    db=db.map(o=>{
+      if(o.orderNo!==ref)return o;
+      found=true;
+      // Update all SKU rows of this order with courier data
+      const base=type==='ewe'
+        ?{...o,courierStatusEWE:status||o.courierStatusEWE,trackingEWE:tracking||o.trackingEWE,dispatchDateEWE:date||o.dispatchDateEWE,courier:'EWE'}
+        :{...o,courierStatusTFM:status||o.courierStatusTFM,trackingTFM:tracking||o.trackingTFM,dispatchDateTFM:date||o.dispatchDateTFM,tfmCourier:'TFM',lastComment:lastComment||o.lastComment};
+      if(isReplaced)return{...base,replaced:'Yes',returnReceived:base.returnReceived==='Received'?'Received':'Pending'};
+      return base;
+    });
+    if(found){matched++;if(isReplaced)replacedCount++;}else miss.push(ref);
+  });
+  save();
+  const msg=`Matched ${matched} order(s).${replacedCount?' '+replacedCount+' marked as replaced/returned.':''}${miss.length?' Not found: '+miss.slice(0,6).join(', ')+(miss.length>6?'…':''):''}`;
+  document.getElementById(type+'-res').innerHTML=`<div class="result-box ${miss.length?'rwarn':'rok'}">${msg}</div>`;
+  toast(type.toUpperCase()+': '+msg,!miss.length);
+}
+
+function importCOD(){
+  const text=document.getElementById('cod-ta').value.trim();
+  if(!text){toast('Nothing to import',false);return}
+  const rows=parseTSV(text);
+  if(!rows.length){toast('Could not parse — check headers are included',false);return}
+  let matched=0;const miss=[];
+  rows.forEach(r=>{
+    const ref=(r.orderNo||'').trim();
+    if(!ref)return;
+    const received=isTruthy(r.received);
+    let found=false;
+    db=db.map(o=>{
+      if(o.orderNo!==ref)return o;
+      found=true;
+      return{...o,
+        codAmountReceived:r.amount||o.codAmountReceived,
+        codReceived:received?'Received':(r.received!==undefined?'Pending':o.codReceived),
+        codStatus:received?'Received':(o.codStatus||'Pending')};
+    });
+    if(found)matched++;else miss.push(ref);
+  });
+  save();
+  const msg=`Matched ${matched} order(s) to COD data.${miss.length?' Not found (import orders first?): '+miss.slice(0,6).join(', ')+(miss.length>6?'…':''):''}`;
+  document.getElementById('cod-res').innerHTML=`<div class="result-box ${miss.length?'rwarn':'rok'}">${msg}</div>`;
+  toast('COD imported: '+msg,!miss.length);
+}
+
+function importReturn(){
+  const text=document.getElementById('ret-ta').value.trim();
+  if(!text){toast('Nothing to import',false);return}
+  const rows=parseTSV(text);
+  if(!rows.length){toast('Could not parse — check headers are included',false);return}
+  let matched=0;const miss=[];
+  rows.forEach(r=>{
+    const ref=(r.orderNo||'').trim();
+    if(!ref)return;
+    const received=isTruthy(r.received);
+    let found=false;
+    db=db.map(o=>{
+      if(o.orderNo!==ref)return o;
+      found=true;
+      return{...o,returnReceived:received?'Received':'Not Received'};
+    });
+    if(found)matched++;else miss.push(ref);
+  });
+  save();
+  const msg=`Matched ${matched} order(s) to return data.${miss.length?' Not found (import orders first?): '+miss.slice(0,6).join(', ')+(miss.length>6?'…':''):''}`;
+  document.getElementById('ret-res').innerHTML=`<div class="result-box ${miss.length?'rwarn':'rok'}">${msg}</div>`;
+  toast('Returns imported: '+msg,!miss.length);
+}
+
+function sb(s){
+  if(!s||s==='-'||s==='#N/A')return'<span class="badge bn">—</span>';
+  if(s==='Delivered'||s==='Received')return`<span class="badge bs">${s}</span>`;
+  if(['STOCK OUT','Recalled','Cancelled','Not Dispatched','Not Received'].includes(s))return`<span class="badge bd">${s}</span>`;
+  if(['Dispatched','INSTOCK','Received in WH'].includes(s))return`<span class="badge ba">${s}</span>`;
+  if(['In Warehouse','Order in the way','OFD','Pending'].includes(s)||s.toLowerCase().includes('ofd'))return`<span class="badge bw">${s}</span>`;
+  return`<span class="badge bn">${s}</span>`;
+}
+
+function uniq(arr){return[...new Set(arr.filter(Boolean))].sort()}
+function fillSel(id,vals){
+  const el=document.getElementById(id);if(!el)return;
+  const cur=el.value;
+  el.innerHTML='<option value="">'+el.options[0].text+'</option>'+vals.map(v=>`<option${v===cur?' selected':''}>${v}</option>`).join('');
+}
+
+function renderDash(){
+  fillMonthFilter();
+  const today=new Date();
+  const active=db.filter(o=>!isCancelled(o)&&inSelectedMonth(o));
+  const ins=active.filter(o=>o.supplierStatus==='INSTOCK'&&!isDispatchedFromOffice(o));
+  const pend=active.filter(o=>o.supplierStatus==='Not Dispatched'&&!isDelivered(o));
+  const del=active.filter(isDelivered);
+  const ret=active.filter(isReturned);
+  const onHoldEWE=active.filter(o=>(o.courier==='EWE'||o.courierStatusEWE)&&!isDelivered(o)&&!isReturned(o));
+  const onHoldTFM=active.filter(o=>(o.tfmCourier==='TFM'||o.courierStatusTFM)&&!isDelivered(o)&&!isReturned(o));
+  const dispatched=active.filter(isDispatchedFromOffice);
+  const totalOrders=uniq(active.map(o=>o.orderNo)).length;
+
+  const daysSince=d=>{ if(!d)return null; const dt=new Date(d); if(isNaN(dt))return null; return Math.max(0,Math.floor((today-dt)/86400000)); };
+
+  // Order taken 7+ days ago and still not dispatched from office
+  const pend7=active.filter(o=>{
+    if(isDispatchedFromOffice(o))return false;
+    const d=daysSince(o.orderDate);
+    return d!==null&&d>7;
+  }).map(o=>({...o,_days:daysSince(o.orderDate)})).sort((a,b)=>b._days-a._days);
+
+  // Bill/shipment created on courier but not yet actually dispatched
+  // TFM marks this state as "Created", Easyway (EWE) marks it as "Pending"
+  const billCreated=active.filter(o=>{
+    const tfmCreated=(o.courierStatusTFM||'').trim().toLowerCase()==='created';
+    const eweCreated=(o.courierStatusEWE||'').trim().toLowerCase()==='pending';
+    return tfmCreated||eweCreated;
+  });
+
+  // Supplier hasn't dispatched (bill/dispatch date not yet recorded) for more than 2 days since order date
+  const supNotDispatched2Orders=active.filter(o=>{
+    if(o.supplierStatus!=='Not Dispatched')return false;
+    if(isDelivered(o))return false;
+    if(isDispatchedFromOffice(o))return false; // already moved past the supplier stage — order_status/courier fields say so
+    const d=daysSince(o.orderDate);
+    return d!==null&&d>2;
+  }).map(o=>({...o,_days:daysSince(o.orderDate)})).sort((a,b)=>b._days-a._days);
+  // Count all SKUs from these orders
+  const supNotDispatched2=supNotDispatched2Orders.reduce((total,o)=>{
+    const parts=(o.sku||'').split(',').map(s=>s.trim()).filter(Boolean);
+    return total+(parts.length||1);
+  },0);
+
+  document.getElementById('s0').textContent=totalOrders;
+  document.getElementById('s1').textContent=dispatched.length;
+  document.getElementById('s3').textContent=ins.length;
+  document.getElementById('s4').textContent=del.length;
+  document.getElementById('s5').textContent=ret.length;
+  document.getElementById('s6').textContent=onHoldEWE.length;
+  document.getElementById('s7').textContent=onHoldTFM.length;
+  document.getElementById('s8').textContent=pend7.length;
+  document.getElementById('s9').textContent=billCreated.length;
+  document.getElementById('bi').textContent=ins.length;
+  document.getElementById('bp').textContent=pend.length;
+  document.getElementById('b7').textContent=pend7.length;
+  document.getElementById('bbc').textContent=billCreated.length;
+  const bs2=document.getElementById('bs2');if(bs2)bs2.textContent=supNotDispatched2;
+  const s10=document.getElementById('s10');if(s10)s10.textContent=supNotDispatched2;
+  const saBc=document.getElementById('sa-bc');if(saBc)saBc.textContent=billCreated.length;
+  const saS2=document.getElementById('sa-s2');if(saS2)saS2.textContent=supNotDispatched2;
+  const sa7d=document.getElementById('sa-7d');if(sa7d)sa7d.textContent=pend7.length;
+
+  const row=(o,cols)=>`<tr>${cols.map(c=>{
+    if(c==='store')return`<td>${colorBadge(o.store)}</td>`;
+    if(c==='supplier')return`<td>${colorBadge(o.supplier)}</td>`;
+    if(c==='ss')return`<td>${sb(o.supplierStatus)}</td>`;
+    if(c==='sku')return`<td class="sku-cell">${o.sku||'-'}</td>`;
+    if(c==='days'){
+      const d=daysSince(o.orderDate);
+      const dc=d===null?'bn':(d>5?'bd':d>2?'bw':'bn');
+      return`<td><span class="badge ${dc}">${d===null?'-':d+' days'}</span></td>`;
+    }
+    return`<td>${o[c]||'-'}</td>`;
+  }).join('')}</tr>`;
+
+  const fill=(id,rows,cols)=>{
+    document.getElementById(id).innerHTML=rows.length?rows.map(o=>row(o,cols)).join(''):`<tr><td colspan="${cols.length}" class="empty">None</td></tr>`;
+  };
+  fill('ti',ins,['orderDate','orderNo','store','customer','mobile','sku','orderValue']);
+  fill('tp',pend,['orderDate','orderNo','store','customer','sku','supplier','ss','days']);
+
+  document.getElementById('t7').innerHTML=pend7.length?pend7.map(o=>`<tr>
+    <td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
+    <td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td class="sku-cell">${o.sku||'-'}</td>
+    <td>${colorBadge(o.supplier)}</td><td><span class="badge bd">${o._days} days</span></td></tr>`).join(''):`<tr><td colspan="8" class="empty">Nothing pending 7+ days</td></tr>`;
+
+  document.getElementById('tbc').innerHTML=billCreated.length?billCreated.map(o=>{
+    const isTFM=(o.courierStatusTFM||'').trim().toLowerCase()==='created';
+    const courierName=isTFM?'TFM':'EWE';
+    const status=isTFM?o.courierStatusTFM:o.courierStatusEWE;
+    return`<tr><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
+    <td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td class="sku-cell">${o.sku||'-'}</td>
+    <td>${colorBadge(courierName)}</td><td>${sb(status)}</td></tr>`;
+  }).join(''):`<tr><td colspan="7" class="empty">None</td></tr>`;
+
+  const ts2=document.getElementById('ts2');
+  if(ts2)ts2.innerHTML=supNotDispatched2Orders.length?supNotDispatched2Orders.map(o=>`<tr>
+    <td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
+    <td>${o.customer||'-'}</td><td class="sku-cell">${o.sku||'-'}</td>
+    <td>${colorBadge(o.supplier)}</td><td><span class="badge bd">${o._days} days</span></td></tr>`).join(''):`<tr><td colspan="7" class="empty">None</td></tr>`;
+}
+
+function renderOrders(){
+  fillSel('fo-store',uniq(db.map(o=>o.store)));
+  fillSel('fo-sup',uniq(db.map(o=>o.supplier).filter(s=>s&&s!=='NS')));
+  const st=document.getElementById('fo-store').value;
+  const su=document.getElementById('fo-sup').value;
+  const ss=document.getElementById('fo-sup-status').value;
+  const q=(document.getElementById('fo-q').value||'').toLowerCase();
+  const rows=db.filter(o=>{
+    if(!inSelectedMonth(o))return false;
+    if(st&&o.store!==st)return false;
+    if(su&&o.supplier!==su)return false;
+    if(ss&&o.supplierStatus!==ss)return false;
+    if(q&&![(o.orderNo||''),(o.customer||''),(o.sku||'')].some(v=>v.toLowerCase().includes(q)))return false;
+    return true;
+  }).sort((a,b)=>{
+    const dateA=new Date(a.orderDate||0);
+    const dateB=new Date(b.orderDate||0);
+    return dateB-dateA;
+  });
+  document.getElementById('to').innerHTML=rows.length?rows.map(o=>`<tr class="clickable" onclick="showOrderDetails('${o.orderNo}')">
+    <td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
+    <td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td>${o.orderValue||'-'}</td><td>${o.noItems||'-'}</td>
+    <td class="sku-cell">${o.sku}</td><td>${colorBadge(o.supplier)}</td><td>${o.instock||'-'}</td>
+    <td>${sb(o.orderStatus)}</td>
+    <td>${sb(o.supplierStatus)}</td><td>${o.supplierDispatchDate||'-'}</td>
+    <td>${isDispatchedFromOffice(o)?'<span class="badge bs">Yes</span>':'<span class="badge bn">No</span>'}</td><td>${o.dispatchDateEWE||'-'}</td><td>${o.dispatchDateTFM||'-'}</td>
+    <td>${colorBadge(o.courier)}</td><td>${colorBadge(o.tfmCourier)}</td>
+    <td>${sb(o.courierStatusEWE)}</td><td>${sb(o.courierStatusTFM)}</td>
+    <td>${o.codStatus||'-'}</td><td>${o.codAmountReceived||'-'}</td><td>${sb(o.returnReceived)}</td>
+    <td style="font-size:10px">${o.trackingEWE||'-'}</td><td style="font-size:10px">${o.trackingTFM||'-'}</td>
+  </tr>`).join(''):`<tr><td colspan="24" class="empty">No results</td></tr>`;
+}
+
+function renderPending(){
+  fillSel('fp-store',uniq(db.map(o=>o.store)));
+  fillSel('fp-sup',uniq(db.map(o=>o.supplier).filter(s=>s&&s!=='NS')));
+  const st=document.getElementById('fp-store').value;
+  const su=document.getElementById('fp-sup').value;
+  const q=(document.getElementById('fp-q')?document.getElementById('fp-q').value:'').toLowerCase().trim();
+  const today=new Date();
+  const candidates=db.filter(o=>{
+    const ss=o.supplierStatus||'';
+    if(ss!=='Not Dispatched'&&!ss.startsWith('Partially dispatched'))return false;
+    if(isCancelled(o))return false;
+    if(isDelivered(o))return false;
+    if(isDispatchedFromOffice(o))return false;
+    if(!inSelectedMonth(o))return false;
+    if(st&&o.store!==st)return false;
+    if(q&&!(o.orderNo||'').toLowerCase().includes(q))return false;
+    return true;
+  });
+  // Extract each pending SKU as its own line — a supplier sheet often lists
+  // several SKUs for one order in a single cell, so pull the per-SKU detail
+  // (see importSupplier/skuDetails) the same way the Order status page does,
+  // and only keep the SKUs that are still actually pending (no dispatch date).
+  const lines=[];
+  candidates.forEach(o=>{
+    const parts=(o.sku||'').split(',').map(s=>s.trim()).filter(Boolean);
+    const list=parts.length?parts:[o.sku||''];
+    let shown=false;
+    list.forEach(part=>{
+      const code=skuCode(part);
+      const hasDetail=!!(o.skuDetails&&Object.prototype.hasOwnProperty.call(o.skuDetails,code));
+      const detail=hasDetail?o.skuDetails[code]:{};
+      const supplier=hasDetail?(detail.supplier||'NS'):'NS';
+      const supplierStatus=hasDetail?(detail.supplierStatus||''):(o.supplierStatus||'');
+      const dispatchDate=(hasDetail?(detail.supplierDispatchDate||''):(o.supplierDispatchDate||'')).trim();
+      if(dispatchDate)return; // this specific SKU has already been dispatched by the supplier
+      if(supplierStatus&&supplierStatus!=='Not Dispatched'&&!supplierStatus.startsWith('Partially'))return;
+      if(su&&supplier!==su)return; // supplier filter applies per-SKU-line, since one order can span several suppliers
+      lines.push({o,part,supplier,first:!shown});
+      shown=true;
+    });
+  });
+  // Sort by order date descending (newest first)
+  lines.sort((a,b)=>{
+    const dateA=new Date(a.o.orderDate||0);
+    const dateB=new Date(b.o.orderDate||0);
+    return dateB-dateA;
+  });
+  const totalOrders=uniq(lines.map(l=>l.o.orderNo)).length;
+  const totalEl=document.getElementById('pend-total');
+  if(totalEl)totalEl.textContent=`Total: ${totalOrders} order${totalOrders!==1?'s':''}`;
+  document.getElementById('tpend').innerHTML=(lines.length?lines.map(({o,part,supplier,first})=>{
+    const days=o.orderDate?Math.max(0,Math.floor((today-new Date(o.orderDate))/86400000)):'-';
+    const dc=typeof days==='number'?(days>5?'bd':days>2?'bw':'bn'):'bn';
+    const commentTd=commentCell(o);
+    return`<tr class="clickable" ${rowAttrs(o)}><td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
+    <td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td class="sku-cell">${part}</td><td>${colorBadge(supplier)}</td>
+    <td>${sb('Not Dispatched')}</td><td><span class="badge ${dc}">${days} days</span></td>${commentTd}</tr>`;
+  }).join(''):`<tr><td colspan="10" class="empty">No pending items</td></tr>`);
+}
+
+
+function renderWH(){
+  fillSel('fwh-store',uniq(db.map(o=>o.store)));
+  fillSel('fwh-sup',uniq(db.map(o=>o.supplier).filter(s=>s&&s!=='NS')));
+  const st=document.getElementById('fwh-store').value;
+  const su=document.getElementById('fwh-sup').value;
+  const q=(document.getElementById('fwh-q').value||'').toLowerCase();
+  const today=new Date();
+  const rows=db.filter(o=>{
+    if(isCancelled(o))return false;
+    if(isDelivered(o))return false;
+    if(isReturned(o))return false;
+    if(!inSelectedMonth(o))return false;
+    if(isDispatchedFromOffice(o))return false;
+    if(/dispatch|deliver|return|cancel/i.test(o.orderStatus||''))return false;
+    const refDate=o.supplierDispatchDate||o.orderDate;
+    if(!refDate)return false;
+    const d=new Date(refDate);
+    if(isNaN(d))return false;
+    const days=Math.floor((today-d)/86400000);
+    if(days<=7)return false;
+    if(st&&o.store!==st)return false;
+    if(su&&o.supplier!==su)return false;
+    if(q&&![(o.orderNo||''),(o.customer||''),(o.sku||'')].some(v=>v.toLowerCase().includes(q)))return false;
+    return true;
+  }).map(o=>{
+    const refDate=o.supplierDispatchDate||o.orderDate;
+    const days=Math.floor((today-new Date(refDate))/86400000);
+    return{...o,_days:days};
+  }).sort((a,b)=>b._days-a._days);
+  document.getElementById('twh').innerHTML=rows.length?rows.map(o=>`<tr>
+    <td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
+    <td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td class="sku-cell">${o.sku}</td>
+    <td>${colorBadge(o.supplier)}</td><td>${sb(o.supplierStatus||'Not Dispatched')}</td><td>${o.supplierDispatchDate||'-'}</td><td>${o.orderValue||'-'}</td>
+    <td><span class="badge bd">${o._days} days</span></td></tr>`).join(''):`<tr><td colspan="11" class="empty">Nothing pending 7+ days</td></tr>`;
+}
+
+function renderInstock(){
+  fillSel('fins-store',uniq(db.map(o=>o.store)));
+  const st=document.getElementById('fins-store').value;
+  const q=(document.getElementById('fins-q').value||'').toLowerCase();
+  const rows=db.filter(o=>{
+    if(o.supplierStatus!=='INSTOCK'||isDispatchedFromOffice(o))return false;
+    if(isCancelled(o))return false;
+    if(!inSelectedMonth(o))return false;
+    if(st&&o.store!==st)return false;
+    if(q&&![(o.orderNo||''),(o.customer||''),(o.sku||'')].some(v=>v.toLowerCase().includes(q)))return false;
+    return true;
+  }).sort((a,b)=>{
+    const dateA=new Date(a.orderDate||0);
+    const dateB=new Date(b.orderDate||0);
+    return dateB-dateA;
+  });
+  document.getElementById('tins').innerHTML=rows.length?rows.map(o=>`<tr class="clickable" onclick="showOrderDetails('${o.orderNo}')">
+    <td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
+    <td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td class="sku-cell">${o.sku}</td><td>${o.orderValue||'-'}</td></tr>`).join(''):`<tr><td colspan="7" class="empty">No instock items pending</td></tr>`;
+}
+
+function renderStockOut(){
+  fillSel('fso-store',uniq(db.map(o=>o.store)));
+  const st=document.getElementById('fso-store').value;
+  const q=(document.getElementById('fso-q').value||'').toLowerCase();
+  const candidates=db.filter(o=>{
+    // Check either the order-level supplierStatus is STOCK OUT, OR at least
+    // one individual SKU on this order has a per-SKU STOCK OUT status. The
+    // order-level status only becomes STOCK OUT when EVERY sku on the order
+    // is stock out (see recomputeOrderAggregate), so relying on it alone
+    // silently drops orders where only some of the SKUs are stock out.
+    const isStockOutByStatus=o.supplierStatus==='STOCK OUT';
+    const anySkuStockOut=!!(o.skuDetails&&Object.values(o.skuDetails).some(d=>d.supplierStatus==='STOCK OUT'));
+    const isStockOut=isStockOutByStatus||anySkuStockOut;
+    if(!isStockOut)return false;
+    if(isCancelled(o))return false;
+    if(!inSelectedMonth(o))return false;
+    if(st&&o.store!==st)return false;
+    if(q&&![(o.orderNo||''),(o.customer||''),(o.sku||'')].some(v=>v.toLowerCase().includes(q)))return false;
+    return true;
+  });
+  // One order row can list several SKUs in a single cell — break each out
+  // into its own line (like the Order status breakdown), using the per-SKU
+  // supplier detail when we have it so only the SKUs actually marked
+  // Stock out / Sold out show up here, each with its own order no,
+  // customer name and mobile number.
+  const lines=[];
+  candidates.forEach(o=>{
+    const parts=(o.sku||'').split(',').map(s=>s.trim()).filter(Boolean);
+    const list=parts.length?parts:[o.sku||''];
+    list.forEach(part=>{
+      const code=skuCode(part);
+      const hasDetail=!!(o.skuDetails&&Object.prototype.hasOwnProperty.call(o.skuDetails,code));
+      const detail=hasDetail?o.skuDetails[code]:{};
+      const supplier=hasDetail?(detail.supplier||'NS'):'NS';
+      const status=hasDetail?(detail.supplierStatus||''):(o.supplierStatus||'');
+      // Skip any SKU line whose own status isn't STOCK OUT.
+      if(status!=='STOCK OUT')return;
+      const note=(hasDetail?(detail.supplierDispatchDate||''):(o.supplierDispatchDate||''))||'-';
+      lines.push({o,part,supplier,note});
+    });
+  });
+  // Sort by order date descending (latest first)
+  lines.sort((a,b)=>{
+    const dateA=new Date(a.o.orderDate||0);
+    const dateB=new Date(b.o.orderDate||0);
+    return dateB-dateA;
+  });
+  document.getElementById('tso').innerHTML=lines.length?lines.map(({o,part,supplier,note})=>`<tr class="clickable" onclick="showOrderDetails('${o.orderNo}')">
+    <td>${o.orderDate||'-'}</td><td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
+    <td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td class="sku-cell">${part}</td>
+    <td>${colorBadge(supplier)}</td><td>${note}</td></tr>`).join(''):`<tr><td colspan="8" class="empty">No stock out items</td></tr>`;
+}
+
+function rowAttrs(o){
+  return`data-order="${(o.orderNo||'').replace(/"/g,'&quot;')}" data-sku="${(o.sku||'').replace(/"/g,'&quot;')}"`;
+}
+
+function updateComment(orderNo,sku,val){
+  const idx=db.findIndex(x=>x.orderNo===orderNo&&x.sku===sku);
+  if(idx<0)return;
+  db[idx].comment=val;
+  persistData();
+}
+function commentCell(o){
+  const esc=(v)=>(v||'').toString().replace(/"/g,'&quot;');
+  return`<td onclick="event.stopPropagation()"><input type="text" class="comment-input" value="${esc(o.comment)}" placeholder="Add comment…" onchange="updateComment('${esc(o.orderNo).replace(/'/g,"\\'")}','${esc(o.sku).replace(/'/g,"\\'")}',this.value)"></td>`;
+}
+function sumAmount(rows){
+  return rows.reduce((t,o)=>{
+    const v=parseFloat((o.codAmountReceived||o.orderValue||'0').toString().replace(/[^0-9.\-]/g,''));
+    return t+(isNaN(v)?0:v);
+  },0);
+}
+function fmtAmt(n){
+  return n?n.toLocaleString(undefined,{maximumFractionDigits:2}):'0';
+}
+
+function renderCourierFor(courier){
+  const p=courier==='EWE'?'ewe':'tfm';
+  fillSel('fc'+p+'-store',uniq(db.map(o=>o.store)));
+  // Dynamically fill status filter with actual statuses from data
+  const statusField=courier==='EWE'?'courierStatusEWE':'courierStatusTFM';
+  const actualStatuses=uniq(db.map(o=>o[statusField]).filter(Boolean));
+  const statusSel=document.getElementById('fc'+p+'-status');
+  if(statusSel){
+    const cur=statusSel.value;
+    statusSel.innerHTML='<option value="">All statuses</option>'+actualStatuses.map(s=>`<option${s===cur?' selected':''}>${s}</option>`).join('');
+  }
+  const st=document.getElementById('fc'+p+'-store').value;
+  const cs=document.getElementById('fc'+p+'-status').value;
+  const q=(document.getElementById('fc'+p+'-q').value||'').toLowerCase();
+  const dateField=courier==='EWE'?'dispatchDateEWE':'dispatchDateTFM';
+  const trackField=courier==='EWE'?'trackingEWE':'trackingTFM';
+  const nameField=courier==='EWE'?'courier':'tfmCourier';
+  const rows=db.filter(o=>{
+    if(!o[nameField]&&!o[statusField])return false;
+    if(isCancelled(o))return false;
+    if(!inSelectedMonth(o))return false;
+    if(st&&o.store!==st)return false;
+    if(cs&&o[statusField]!==cs)return false;
+    if(q&&![(o.orderNo||''),(o.customer||''),(o[trackField]||'')].some(v=>v.toLowerCase().includes(q)))return false;
+    return true;
+  }).sort((a,b)=>{
+    const dateA=new Date(a.orderDate||0);
+    const dateB=new Date(b.orderDate||0);
+    return dateB-dateA;
+  });
+  if(courier==='TFM'){
+    document.getElementById('tcour-'+p).innerHTML=rows.length?rows.map(o=>{
+      const trackDisplay=o[trackField]?`<span style="font-weight:500;color:var(--text-primary)">${o[trackField]}</span>`:(/deliver/i.test(o[statusField]||'')?'<span class="badge bs">✓ Delivered</span>':'<span class="badge bn">—</span>');
+      return `<tr class="clickable" ${rowAttrs(o)}>
+      <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
+      <td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td>
+      <td>${o[dateField]||'-'}</td><td>${sb(o[statusField])}</td><td style="font-size:10px">${trackDisplay}</td>
+      <td style="max-width:200px;white-space:normal;font-size:10px;color:var(--text-secondary)">${o.lastComment||'-'}</td>
+      <td>${o.codStatus||'-'}</td><td>${o.codAmountReceived||'-'}</td><td>${o.replaced==='Yes'?'<span class="badge bd">Replaced/Return</span>':sb(o.returnReceived)}</td></tr>`;
+    }).join(''):`<tr><td colspan="11" class="empty">No TFM data yet — import TFM from the Import data page</td></tr>`;
+  } else {
+    document.getElementById('tcour-'+p).innerHTML=rows.length?rows.map(o=>{
+      const trackDisplay=o[trackField]?`<span style="font-weight:500;color:var(--text-primary)">${o[trackField]}</span>`:(/deliver/i.test(o[statusField]||'')?'<span class="badge bs">✓ Delivered</span>':'<span class="badge bn">—</span>');
+      return `<tr class="clickable" ${rowAttrs(o)}>
+      <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td>
+      <td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td>
+      <td>${o[dateField]||'-'}</td><td>${sb(o[statusField])}</td><td style="font-size:10px">${trackDisplay}</td>
+      <td>${o.codStatus||'-'}</td><td>${o.codAmountReceived||'-'}</td><td>${o.replaced==='Yes'?'<span class="badge bd">Replaced/Return</span>':sb(o.returnReceived)}</td></tr>`;
+    }).join(''):`<tr><td colspan="10" class="empty">No EWE data yet — import EWE from the Import data page</td></tr>`;
+  }
+}
+function renderCourierEWE(){renderCourierFor('EWE')}
+function renderCourierTFM(){renderCourierFor('TFM')}
+
+function renderReports(){
+  fillSel('frep-store',uniq(db.map(o=>o.store)));
+  const st=document.getElementById('frep-store').value;
+  const q=(document.getElementById('frep-q').value||'').toLowerCase();
+  const matchFilter=o=>{
+    if(isCancelled(o))return false;
+    if(!inSelectedMonth(o))return false;
+    if(st&&o.store!==st)return false;
+    if(q&&![(o.orderNo||''),(o.customer||''),(o.sku||'')].some(v=>v.toLowerCase().includes(q)))return false;
+    return true;
+  };
+  const replReturnPending=db.filter(o=>o.replaced==='Yes'&&(o.returnReceived||'').trim().toLowerCase()!=='received').filter(matchFilter);
+  const returnKeys=new Set(replReturnPending.map(o=>(o.orderNo||'')+'||'+(o.sku||'')));
+  const codPendingEWE=db.filter(o=>isDeliveredEWE(o)&&(o.codStatus||'').trim().toLowerCase()!=='received').filter(matchFilter);
+  const codPendingTFM=db.filter(o=>isDeliveredTFM(o)&&(o.codStatus||'').trim().toLowerCase()!=='received').filter(matchFilter);
+  // "On hold" excludes bill-created-but-not-dispatched placeholder states
+  // (EWE uses "Pending", TFM uses "Created" for that state — tracked separately on the dashboard)
+  // Also excludes anything already sitting in the replacement/return list above.
+  const onHoldEWE=db.filter(o=>{
+    if(!(o.courier==='EWE'||o.courierStatusEWE))return false;
+    if(isDeliveredEWE(o)||isReturned(o))return false;
+    if((o.courierStatusEWE||'').trim().toLowerCase()==='pending')return false;
+    if(returnKeys.has((o.orderNo||'')+'||'+(o.sku||'')))return false;
+    return true;
+  }).filter(matchFilter);
+  const onHoldTFM=db.filter(o=>{
+    if(!(o.tfmCourier==='TFM'||o.courierStatusTFM))return false;
+    if(isDeliveredTFM(o)||isReturned(o))return false;
+    if((o.courierStatusTFM||'').trim().toLowerCase()==='created')return false;
+    if(returnKeys.has((o.orderNo||'')+'||'+(o.sku||'')))return false;
+    return true;
+  }).filter(matchFilter);
+
+  document.getElementById('r-rr-c').textContent=replReturnPending.length;
+  document.getElementById('r-codewe-c').textContent=codPendingEWE.length;
+  document.getElementById('r-codtfm-c').textContent=codPendingTFM.length;
+  document.getElementById('r-holdewe-c').textContent=onHoldEWE.length;
+  document.getElementById('r-holdtfm-c').textContent=onHoldTFM.length;
+  const saHoldEWE=document.getElementById('sa-holdewe');if(saHoldEWE)saHoldEWE.textContent=onHoldEWE.length;
+  const saHoldTFM=document.getElementById('sa-holdtfm');if(saHoldTFM)saHoldTFM.textContent=onHoldTFM.length;
+  const saCodEWE=document.getElementById('sa-codewe');if(saCodEWE)saCodEWE.textContent=codPendingEWE.length;
+  const saCodTFM=document.getElementById('sa-codtfm');if(saCodTFM)saCodTFM.textContent=codPendingTFM.length;
+
+  const attrs=o=>`data-order="${(o.orderNo||'').replace(/"/g,'&quot;')}" data-sku="${(o.sku||'').replace(/"/g,'&quot;')}"`;
+
+  document.getElementById('r-rr').innerHTML=replReturnPending.length?replReturnPending.map(o=>{
+    const courierName=isDeliveredTFM(o)||o.tfmCourier==='TFM'?'TFM':'EWE';
+    return`<tr class="clickable" ${attrs(o)}>
+    <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td><td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td><td>${colorBadge(o.supplier)}</td>
+    <td>${colorBadge(courierName)}</td><td>${sb(o.returnReceived||'Pending')}</td></tr>`;
+  }).join(''):`<tr><td colspan="7" class="empty">Nothing pending</td></tr>`;
+
+  document.getElementById('r-codewe').innerHTML=codPendingEWE.length?codPendingEWE.map(o=>`<tr class="clickable" ${attrs(o)}>
+    <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td><td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td>
+    <td style="font-size:10px">${o.trackingEWE||'-'}</td>
+    <td>${o.codAmountReceived||o.orderValue||'-'}</td><td>${sb(o.codStatus||'Pending')}</td></tr>`).join('')
+    +`<tr class="tbl-total"><td colspan="5" style="text-align:right">Total</td><td>${fmtAmt(sumAmount(codPendingEWE))}</td><td></td></tr>`
+    :`<tr><td colspan="7" class="empty">None</td></tr>`;
+
+  document.getElementById('r-codtfm').innerHTML=codPendingTFM.length?codPendingTFM.map(o=>`<tr class="clickable" ${attrs(o)}>
+    <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td><td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td>
+    <td style="font-size:10px">${o.trackingTFM||'-'}</td>
+    <td>${o.codAmountReceived||o.orderValue||'-'}</td><td>${sb(o.codStatus||'Pending')}</td></tr>`).join('')
+    +`<tr class="tbl-total"><td colspan="5" style="text-align:right">Total</td><td>${fmtAmt(sumAmount(codPendingTFM))}</td><td></td></tr>`
+    :`<tr><td colspan="7" class="empty">None</td></tr>`;
+
+  document.getElementById('r-holdewe').innerHTML=onHoldEWE.length?onHoldEWE.map(o=>`<tr class="clickable" ${attrs(o)}>
+    <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td><td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td>
+    <td style="font-size:10px">${o.trackingEWE||'-'}</td>
+    <td>${sb(o.courierStatusEWE)}</td><td>${o.orderValue||'-'}</td></tr>`).join('')
+    +`<tr class="tbl-total"><td colspan="6" style="text-align:right">Total</td><td>${fmtAmt(sumAmount(onHoldEWE.map(o=>({orderValue:o.orderValue}))))}</td></tr>`
+    :`<tr><td colspan="7" class="empty">Nothing on hold</td></tr>`;
+
+  document.getElementById('r-holdtfm').innerHTML=onHoldTFM.length?onHoldTFM.map(o=>`<tr class="clickable" ${attrs(o)}>
+    <td>${o.orderNo}</td><td>${colorBadge(o.store)}</td><td>${o.customer||'-'}</td><td>${o.mobile||'-'}</td>
+    <td style="font-size:10px">${o.trackingTFM||'-'}</td>
+    <td>${sb(o.courierStatusTFM)}</td><td>${o.orderValue||'-'}</td>
+    <td style="max-width:200px;white-space:normal;font-size:10px;color:var(--text-secondary)">${o.lastComment||'-'}</td></tr>`).join('')
+    +`<tr class="tbl-total"><td colspan="6" style="text-align:right">Total</td><td>${fmtAmt(sumAmount(onHoldTFM.map(o=>({orderValue:o.orderValue}))))}</td><td></td></tr>`
+    :`<tr><td colspan="8" class="empty">Nothing on hold</td></tr>`;
+}
+
+function renderOrderStatus(){
+  const body=document.getElementById('os-body');
+  if(!body)return;
+  const q=(document.getElementById('os-q').value||'').trim();
+  if(!q){ body.innerHTML='<div class="empty">Type an order number, mobile number, or customer name to see everything on file.</div>'; return; }
+  const ql=q.toLowerCase();
+  const digits=v=>(v||'').replace(/\D/g,'');
+  const qDigits=digits(q);
+  // Exact match first: order no, or mobile number (digits-only comparison
+  // so formatting like spaces/dashes/country code prefixes don't matter).
+  let matches=db.filter(o=>(o.orderNo||'').toLowerCase()===ql||(qDigits.length>=7&&digits(o.mobile)===qDigits));
+  if(!matches.length){
+    // Fall back to partial matches across order no, mobile, and customer name.
+    const partial=db.filter(o=>
+      (o.orderNo||'').toLowerCase().includes(ql)||
+      (o.customer||'').toLowerCase().includes(ql)||
+      (qDigits.length>=4&&digits(o.mobile).includes(qDigits))
+    );
+    if(!partial.length){ body.innerHTML='<div class="empty">No matching order found.</div>'; return; }
+    const orderNos=uniq(partial.map(o=>o.orderNo));
+    if(orderNos.length<=5){
+      // Small enough result set (e.g. all orders for one customer/mobile) — show them directly.
+      matches=partial;
+    } else {
+      body.innerHTML=`<div class="empty">No exact match. Did you mean: ${orderNos.slice(0,8).join(', ')}?</div>`;
+      return;
+    }
+  }
+  body.innerHTML=matches.map(o=>{
+    const items=itemsBreakdown(o);
+    const fields=[
+      ['Order date',o.orderDate],['Store',o.store],['Customer name',o.customer],
+      ['Mobile number',o.mobile],['Order value',o.orderValue],['No of items',o.noItems],
+      ['SKU',o.sku],['Supplier',o.supplier],['INSTOCK',o.instock],['Supplier status',o.supplierStatus],
+      ['Supplier date of dispatch',o.supplierDispatchDate],['Dispatch from office',isDispatchedFromOffice(o)?'Yes':'No'],
+      ['Dispatch date from office EWE',o.dispatchDateEWE],['Dispatch date from office TFM',o.dispatchDateTFM],
+      ['Courier',o.courier],['TFM',o.tfmCourier],['Courier status EWE',o.courierStatusEWE],['Courier status TFM',o.courierStatusTFM],
+      ['COD status',o.codStatus],['Tracking ID EWE',o.trackingEWE],['Tracking ID TFM',o.trackingTFM],
+      ['Last comment (TFM)',o.lastComment]
+    ];
+    const table=`<div class="tbl-wrap"><table><tbody>${fields.map(([k,v])=>`<tr><td style="color:var(--text-secondary);width:220px;white-space:nowrap">${k}</td><td>${v||'-'}</td></tr>`).join('')}</tbody></table></div>`;
+
+    let summary;
+    if(isDispatchedFromOffice(o)){
+      const isTFM=!!(o.courierStatusTFM||o.tfmCourier);
+      const courierName=isTFM?'TFM':'EWE';
+      const status=isTFM?o.courierStatusTFM:o.courierStatusEWE;
+      const tracking=isTFM?o.trackingTFM:o.trackingEWE;
+      summary=`Dispatched from office via <strong>${courierName}</strong> — courier status: <strong>${status||'—'}</strong> — tracking ID: <strong>${tracking||'—'}</strong>`;
+    } else if(o.supplierDispatchDate){
+      summary=`Dispatched from supplier on <strong>${o.supplierDispatchDate}</strong> — not yet dispatched from office`;
+    } else {
+      summary=`Not yet dispatched from supplier`;
+    }
+    return`<div class="section" style="margin-bottom:14px">
+      <div class="sec-head"><h2>${o.orderNo}${o.sku?' — '+o.sku:''}</h2></div>
+      ${table}
+      ${items}
+      <div style="padding:10px 14px;font-size:12px;background:var(--bg-accent);color:var(--text-accent);border-top:0.5px solid var(--border)">${summary}</div>
+    </div>`;
+  }).join('');
+}
+
+function formatDateDMY(dateStr){
+  // Convert date string to DD-MM-YYYY format
+  if(!dateStr)return dateStr;
+  const date=new Date(dateStr);
+  if(isNaN(date.getTime()))return dateStr; // Invalid date, return as-is
+  const day=String(date.getDate()).padStart(2,'0');
+  const month=String(date.getMonth()+1).padStart(2,'0');
+  const year=date.getFullYear();
+  return`${day}-${month}-${year}`;
+}
+
+function skuCode(s){
+  // "RMD9299 | Multi - M -" -> "RMD9299" — the short code used to match supplier rows
+  return(s||'').split('|')[0].trim().toUpperCase();
+}
+
+function recomputeOrderAggregate(o){
+  // Derive the order-level supplier status/date/received-in-WH from ALL
+  // per-SKU details we have, rather than whichever supplier row happened
+  // to be imported last. If a SKU has no per-SKU record yet, we don't have
+  // a full picture, so leave the order-level fields untouched.
+  const parts=(o.sku||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(!parts.length||!o.skuDetails)return o;
+  const details=parts.map(p=>o.skuDetails[skuCode(p)]).filter(Boolean);
+  if(details.length<parts.length)return o;
+  if(details.some(d=>d.supplierStatus==='Cancelled')){
+    return{...o,supplierStatus:'Cancelled'};
+  }
+  const dates=details.map(d=>(d.supplierDispatchDate||'').trim());
+  const allDispatched=dates.every(Boolean);
+  const anyDispatched=dates.some(Boolean);
+  const allWH=details.every(d=>d.receivedInWH==='Yes');
+  const anyWH=details.some(d=>d.receivedInWH==='Yes');
+  let supplierStatus,supplierDispatchDate;
+  if(details.every(d=>d.supplierStatus==='STOCK OUT')){
+    supplierStatus='STOCK OUT';supplierDispatchDate=o.supplierDispatchDate;
+  } else if(allDispatched){
+    supplierStatus='Dispatched';
+    supplierDispatchDate=dates[dates.length-1];
+  } else if(anyDispatched){
+    supplierStatus=`Partially dispatched (${dates.filter(Boolean).length}/${parts.length})`;
+    supplierDispatchDate='';
+  } else {
+    supplierStatus=details[details.length-1].supplierStatus||'Not Dispatched';
+    supplierDispatchDate='';
+  }
+  const receivedInWH=allWH?'Yes':(anyWH?`Partial (${details.filter(d=>d.receivedInWH==='Yes').length}/${parts.length})`:'');
+  return{...o,supplierStatus,supplierDispatchDate,receivedInWH};
+}
+
+function itemsBreakdown(o){
+  // Pull ALL SKU rows for this order from db, then split each row's sku
+  // field on commas — a single order row can list several SKUs in one
+  // cell (e.g. "RMD9299 | Multi - M -,RMD9295 | White - M -,RMD9286 | White -").
+  // Each becomes its own line, using its own per-SKU supplier data if we
+  // have it (see importSupplier), falling back to the order-level values.
+  const siblings=db.filter(x=>x.orderNo===o.orderNo);
+  if(!siblings.length)return'';
+  const rows=[];
+  siblings.forEach(item=>{
+    const parts=(item.sku||'').split(',').map(s=>s.trim()).filter(Boolean);
+    const list=parts.length?parts:[item.sku||''];
+    list.forEach(part=>{
+      const code=skuCode(part);
+      const hasDetail=!!(item.skuDetails&&Object.prototype.hasOwnProperty.call(item.skuDetails,code));
+      const detail=hasDetail?item.skuDetails[code]:{};
+      // If we have an explicit per-SKU record (even with blank fields, meaning
+      // "supplier confirmed this SKU isn't dispatched yet"), trust it as-is —
+      // don't fall back to the order-level fields, which can be polluted by
+      // a sibling SKU's status when several SKUs share one order row.
+      const supplier=hasDetail?(detail.supplier||'NS'):'NS';
+      const supplierStatus=hasDetail?(detail.supplierStatus||''):(item.supplierStatus||'');
+      const date=(hasDetail?(detail.supplierDispatchDate||''):(item.supplierDispatchDate||'')).trim();
+      const receivedInWH=hasDetail?(detail.receivedInWH||''):(item.receivedInWH||'');
+      const statusCell=date
+        ?`<span class="badge ba">Dispatched — ${formatDateDMY(date)}</span>`
+        :sb(supplierStatus||'Not Dispatched');
+      rows.push(`<tr>
+        <td class="sku-cell" title="${part.replace(/"/g,'&quot;')}">${part||'-'}</td>
+        <td>${colorBadge(supplier)}</td>
+        <td>${statusCell}</td>
+        <td>${receivedInWH==='Yes'?'<span class="badge bs">Yes</span>':'<span class="badge bn">No</span>'}</td>
+      </tr>`);
+    });
+  });
+  return`<div style="padding:10px 14px 0 14px;margin-bottom:10px">
+    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px;font-weight:500">All items on this order (${rows.length} SKU${rows.length>1?'s':''}):</div>
+    <div class="tbl-wrap"><table><thead><tr><th>SKU</th><th>Supplier</th><th>Supplier status</th><th>Received in WH</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
+  </div>`;
+}
+
+// Rows rendered with data-order/data-sku attributes (pending, WH, reports tables)
+// route through the same order-details modal used everywhere else.
+document.addEventListener('click',e=>{
+  const tr=e.target.closest('tr[data-order]');
+  if(tr)showOrderDetails(tr.dataset.order);
+});
+
+function renderAll(){renderDash();renderOrders();renderPending();renderWH();renderInstock();renderStockOut();renderCourierEWE();renderCourierTFM();renderReports();renderOrderStatus()}
+
+function exportCSV(){
+  const h=['Order Date','Order Number','Store','Customer Name','Mobile Number','City','Order Value','No of Items','SKU','Supplier','INSTOCK','Order Status','Supplier Status','Supplier Date of Dispatch','Received in WH','Dispatch From Office','Dispatch Date From Office EWE','Dispatch Date From Office TFM','Courier','TFM','Courier Status EWE','Courier Status TFM','COD Status','COD Amount Received','Return Received','Replaced','Tracking ID EWE','Tracking ID TFM'];
+  const rows=db.filter(inSelectedMonth).map(o=>[o.orderDate,o.orderNo,o.store,o.customer,o.mobile,o.city,o.orderValue,o.noItems,o.sku,o.supplier,o.instock,o.orderStatus,o.supplierStatus,o.supplierDispatchDate,o.receivedInWH,isDispatchedFromOffice(o)?'Yes':'No',o.dispatchDateEWE,o.dispatchDateTFM,o.courier,o.tfmCourier,o.courierStatusEWE,o.courierStatusTFM,o.codStatus,o.codAmountReceived,o.returnReceived,o.replaced,o.trackingEWE,o.trackingTFM].map(v=>`"${(v||'').toString().replace(/"/g,'""')}"`).join(','));
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent([h.join(','),...rows].join('\n'));
+  a.download='orders-export'+(monthFilter?'-'+monthFilter:'')+'.csv';a.click();
+}
+
+// Order Details Modal Functions
+function showOrderDetails(orderNo){
+  const order=db.find(o=>o.orderNo===orderNo);
+  if(!order){
+    alert('Order not found');
+    return;
+  }
+  
+  const modal=document.getElementById('orderDetailsModal');
+  if(!modal)return;
+  
+  document.getElementById('orderModalTitle').innerHTML=`${orderNo} — ${(order.sku||'').substring(0,60)}`;
+  
+  const customerOrders=db.filter(o=>o.customer===order.customer).length;
+  document.getElementById('customerOrderCount').innerHTML=`<strong>Customer:</strong> ${order.customer} | <strong>Total Orders:</strong> ${customerOrders}`;
+  
+  buildTimeline(order);
+  buildInfoSections(order);
+  buildItemsTable(order);
+  
+  modal.style.display='flex';
+  document.body.style.overflow='hidden';
+}
+
+function closeOrderModal(){
+  const modal=document.getElementById('orderDetailsModal');
+  if(modal){
+    modal.style.display='none';
+    document.body.style.overflow='auto';
+  }
+}
+
+function buildTimeline(order){
+  const timeline=[
+    {label:'Order Received',status:order.orderDate?'completed':'pending',date:order.orderDate},
+    {label:'Supplier Dispatched',status:order.supplierDispatchDate?'completed':'pending',date:order.supplierDispatchDate},
+    {label:'Courier Shipped',status:(order.dispatchDateEWE||order.dispatchDateTFM)?'completed':'pending',date:order.dispatchDateEWE||order.dispatchDateTFM},
+    {label:'Delivered',status:/deliver/i.test(order.orderStatus||'')?'completed':'pending',date:order.orderDate}
+  ];
+  
+  const container=document.getElementById('timelineContainer');
+  container.innerHTML=timeline.map(step=>`
+    <div class="timeline-step ${step.status}">
+      <div class="timeline-dot">${step.status==='completed'?'✓':'○'}</div>
+      <div class="timeline-label">${step.label}</div>
+      <div class="timeline-date">${step.date||'-'}</div>
+    </div>
+  `).join('');
+}
+
+function buildInfoSections(order){
+  const sections=[
+    {
+      title:'Customer & Store Info',
+      rows:[
+        ['Store',colorBadge(order.store)],
+        ['Customer Name',order.customer||'-'],
+        ['Mobile Number',order.mobile||'-'],
+        ['Delivery City',order.city||'-']
+      ]
+    },
+    {
+      title:'Supplier Tracking',
+      rows:[
+        ['Supplier Name',order.supplier||'-'],
+        ['Supplier Status',order.supplierStatus||'-'],
+        ['Dispatch Date',order.supplierDispatchDate||'-'],
+        ['Received in WH',order.receivedInWH||'-']
+      ]
+    },
+    {
+      title:'Courier Logistics',
+      rows:[
+        ['Courier Name',order.courier||order.tfmCourier||'-'],
+        ['Tracking (EWE)',order.trackingEWE||'-'],
+        ['Tracking (TFM)',order.trackingTFM||'-'],
+        ['Courier Status EWE',order.courierStatusEWE||'-'],
+        ['Courier Status TFM',order.courierStatusTFM||'-'],
+        ['Dispatch Date (EWE)',order.dispatchDateEWE||'-'],
+        ['Dispatch Date (TFM)',order.dispatchDateTFM||'-']
+      ]
+    },
+    {
+      title:'COD & Returns',
+      rows:[
+        ['Order Value',order.orderValue||'-'],
+        ['COD Status',order.codStatus||'-'],
+        ['COD Amount Received',order.codAmountReceived||'-'],
+        ['Replaced Shipment',order.replaced||'-'],
+        ['Return Status',order.returnReceived||'-']
+      ]
+    }
+  ];
+  
+  const grid=document.getElementById('infoGrid');
+  grid.innerHTML=sections.map(sec=>`
+    <div class="info-section">
+      <div class="info-section-title">${sec.title}</div>
+      ${sec.rows.map(([label,value])=>`
+        <div class="info-row">
+          <span class="info-label">${label}</span>
+          <span class="info-value">${value}</span>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function buildItemsTable(order){
+  const tbody=document.getElementById('itemsTableBody');
+  const sku=(order.sku||'').split(/[,|\/]/);
+  const supplier=(order.supplier||'').split(/[,|\/]/);
+  const status=(order.supplierStatus||'').split(/[,|\/]/);
+  const dispatchDate=(order.supplierDispatchDate||'').split(/[,|\/]/);
+  const wh=(order.receivedInWH||'').split(/[,|\/]/);
+  
+  tbody.innerHTML=sku.map((s,i)=>`
+    <tr>
+      <td>${s.trim()||'-'}</td>
+      <td>${(supplier[i]||'').trim()||'-'}</td>
+      <td>${(status[i]||'').trim()||'-'}</td>
+      <td>${(dispatchDate[i]||'').trim()||'-'}</td>
+      <td>${(wh[i]||'').trim()||'-'}</td>
+    </tr>
+  `).join('');
+}
+
+loadData();
+</script>
+
+<div id="orderDetailsModal" class="order-modal">
+  <div class="order-modal-content">
+    <div class="order-modal-header">
+      <div>
+        <div class="order-modal-title" id="orderModalTitle">Order Details</div>
+        <div class="customer-order-count" id="customerOrderCount"></div>
+      </div>
+      <button class="order-modal-close" onclick="closeOrderModal()">×</button>
+    </div>
+    <div class="order-modal-body">
+      <!-- Timeline -->
+      <div class="shipment-timeline" id="timelineContainer"></div>
+      
+      <!-- Info Sections -->
+      <div class="order-info-grid" id="infoGrid"></div>
+      
+      <!-- Items Breakdown -->
+      <div class="items-breakdown">
+        <div class="items-breakdown-title">Order Items Breakdown</div>
+        <table class="items-table">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Supplier</th>
+              <th>Supplier Status</th>
+              <th>Dispatch Date</th>
+              <th>Received in WH</th>
+            </tr>
+          </thead>
+          <tbody id="itemsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Initialize modal close handler
+document.getElementById('orderDetailsModal').addEventListener('click',function(e){
+  if(e.target===this || e.target.classList.contains('order-modal-close')){
+    closeOrderModal();
+  }
+});
+</script>
+
+</body>
+</html>
